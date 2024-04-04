@@ -156,3 +156,11 @@ To install the MQTT modules for Ignition, you must do the following (see this ![
 
 ### Ignition Licenses for Education
 Inductive Automation partners with qualifying educational institutions to provide free Ignition licenses to students anywhere in the world!  Apply here: https://inductiveautomation.com/educational-engagement
+
+### Object Detection using YOLOv5
+1. To install YOLOv5 in the repository run `./ObjectDetection/install.sh`
+2. To run it use `./ObjectDetection/start.sh`
+*add more details later*
+
+### Training YOLOv5
+1. Clone the (labelImg repository)[https://github.com/HumanSignal/labelImg] and the YOLOv5
