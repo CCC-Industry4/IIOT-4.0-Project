@@ -97,9 +97,10 @@ class Camera:
 
     def detect(self):
         while True:
-            thread = threading.Thread(target=self._detect, args=()) 
-            thread.start()
-            thread.join(1)
+            #thread = threading.Thread(target=self._detect, args=()) 
+            #thread.start()
+            #thread.join(1)
+            self._detect()
 
     def start(self):
         thread = threading.Thread(target=self.detect, args=()) 
