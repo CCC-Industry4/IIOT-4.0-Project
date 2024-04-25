@@ -29,11 +29,11 @@ model.classes = CLASSES
 # initialize flask
 app = Flask(__name__)
 
-mutex = threading.Lock();
 class Camera:
     # do camera stuff
     vid = cv2.VideoCapture(VIDEO_INPUT) 
     img = vid.read()[1]
+    pic = img
     prev = "{}"
 
     def __init__(self):
@@ -42,16 +42,10 @@ class Camera:
         self.vid.set(cv2.CAP_PROP_FRAME_HEIGHT, self.height) 
 
     def _detect(self):
-        mutex.acquire(1)
-        #read from camera
-        _, pic = self.vid.read() 
-    
         # if there is no camera, throw excpetion
-        if not _:  
-            return {};
     
         # read img
-        readimg = cv2.cvtColor(pic, cv2.COLOR_BGR2RGB)  
+        readimg = cv2.cvtColor(self.pic, cv2.COLOR_BGR2RGB)  
     
         # do object detection
         result = model(readimg, size=INFERENCE_SIZE) 
@@ -68,7 +62,6 @@ class Camera:
     
         # display img
         self.img = cv2.cvtColor(readimg, cv2.COLOR_RGB2BGR) 
-        mutex.release()
         return self.img
 
     def publish(self, inputData):
@@ -97,15 +90,21 @@ class Camera:
 
     def detect(self):
         while True:
-            #thread = threading.Thread(target=self._detect, args=()) 
-            #thread.start()
-            #thread.join(1)
+            vid = cv2.VideoCapture("http://192.168.10.161:8081") 
+            start = time.process_time();
             self._detect()
+            print(time.process_time() - start);
+
+    def _reader(self):
+         while True:
+             _, self.pic = self.vid.read() 
+
 
     def start(self):
         thread = threading.Thread(target=self.detect, args=()) 
-        thread.daemon = True
+        thread1 = threading.Thread(target=self._reader, args=()) 
         thread.start()
+        thread1.start()
         return thread
 
 def gen_frames(): 
