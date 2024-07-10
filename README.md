@@ -11,7 +11,7 @@ This project's purpose is to bring exposure to concepts regarding Fourth Industr
 This repo will contain steps to set up a system to create an Internet of Things (IOT) using Arduino ESP32s as clients and a [Raspberry Pi](https://www.raspberrypi.org/) as an MQTT Broker using [Mosquitto](https://mosquitto.org/). It will also include a GUI designed for reading the data being published on this project using [dearImgui](https://github.com/ocornut/imgui). It also uses a SCADA system called [Ignition by Inductive Automation](https://inductiveautomation.com/ignition/) to view the data from the MQTT broker as well. This README will explain how to recreate this demo using all the parts described above.
 
 ## Getting Started
-
+test
 1. Begin by cloning this repo in your Linux terminal: ```git clone https://github.com/neiroc-02/IIOT-4.0-Project```
 2. After it finishes cloning, enter the directory using: ```cd IIOT-4.0-Project```
 3. Run the some_installs.sh script to download dependencies: ```./some_installs.sh```
