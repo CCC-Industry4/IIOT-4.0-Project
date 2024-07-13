@@ -17,7 +17,10 @@ This repository will provide instructions for setting up a system to create an I
 - Arduino ESP43 - [KEYESTUDIO ESP32 Smart House](https://www.amazon.com/KEYESTUDIO-Starter-Electronics-Automation-Educational/dp/B0B7637837/ref=sr_1_1_sspa?crid=1ZE22AAM5ZCFI&dib=eyJ2IjoiMSJ9.vgFEthmvUci3ETDUwhHB0pqq6w0wLS5IuMmrOcWP9JvDHMYvl0MYqL60YlBKjU_4UYNupqdrSHSAl2da7GKgd4v5IkPjGUVJ3BIN1Onn4vfMhWsbYeL8-vyXbzNeev-t9YTY3Rd5aZwWKFgFS6Fs1S1Qn1ShdWlWhreDdKwgowcQZPjAKsYaSKbGHMPOeRxkPyKsnTDC5_OJAqBf-OTRjowMIN-fNthXYoNg9roYWCY.qlCVrDIs5i3HnD3cYPmIHhClCKL7uoG3-DqhTCjooEo&dib_tag=se&keywords=KEYESTUDIO+ESP32+Smart+Home&qid=1720830231&sprefix=keyestudio+esp32+smart+home%2Caps%2C162&sr=8-1-spons&sp_csd=d2lkZ2V0TmFtZT1zcF9hdGY&psc=1) $55
   ![71aY7HXNc5L _AC_SL1500_](https://github.com/user-attachments/assets/3cebbbc6-9c92-4065-af2b-c9d46f695485)
 
-- Router [GL.iNet GL-AR300M16-Ext](https://www.amazon.com/GL-iNet-GL-AR300M16-Ext-Pre-Installed-Performance-Programmable/dp/B07794JRC5/ref=sr_1_1?crid=E6RCLYD0MYST&dib=eyJ2IjoiMSJ9.dSqXUJxV4NYM_XUkI9m2xZ_CZYyfFSBF3Qz8-p0E5QLaePcA7euAphGYXUyVel1NxfMDJwEsjoKBKu9J8V7dObSacWI9uQCPaQtszObA_v7V7qCwT5lnC_aY1z8PmEfTAzjI1xy3kK0aZ87tkQHvXplGHVZXqOyKKA4WxzskDMUThFYTTIB5UnPLDBfxi4Pt.0URhTJVv6eVaFmatyx1OKhylgLsxRRjAYgNUAt8PQBw&dib_tag=se&keywords=GL-AR300M16&qid=1720832426&s=electronics&sprefix=%2Celectronics%2C390&sr=1-1) or any router 
+- Router [GL.iNet GL-AR300M16-Ext](https://www.amazon.com/GL-iNet-GL-AR300M16-Ext-Pre-Installed-Performance-Programmable/dp/B07794JRC5/ref=sr_1_1?crid=E6RCLYD0MYST&dib=eyJ2IjoiMSJ9.dSqXUJxV4NYM_XUkI9m2xZ_CZYyfFSBF3Qz8-p0E5QLaePcA7euAphGYXUyVel1NxfMDJwEsjoKBKu9J8V7dObSacWI9uQCPaQtszObA_v7V7qCwT5lnC_aY1z8PmEfTAzjI1xy3kK0aZ87tkQHvXplGHVZXqOyKKA4WxzskDMUThFYTTIB5UnPLDBfxi4Pt.0URhTJVv6eVaFmatyx1OKhylgLsxRRjAYgNUAt8PQBw&dib_tag=se&keywords=GL-AR300M16&qid=1720832426&s=electronics&sprefix=%2Celectronics%2C390&sr=1-1) or any router
+
+  ![41gQQAA8ozL _AC_SL1000_](https://github.com/user-attachments/assets/8f36c3b7-f8ef-4a87-8133-f80b9922bc74)
+
   
 Optional:
 - Touchscreen Raspberry Pi 7" Touch Screen Display - $75
