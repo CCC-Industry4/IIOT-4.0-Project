@@ -24,9 +24,9 @@ Optional:
 ## Table Of Contents
 
 ### If you are starting with unconfigured components…
-- [Initialize Router]([StarterGuide/01_initializing_router.md](https://github.com/CCC-Industry4/StarterGuide/blob/main/01_initializing_router.md))  
-- [Building Smart home](02_building_smart_home.md)
-- [Initialize Raspberry Pi](03_initialize_raspberry_pi.md)
+- [Initialize Router](https://github.com/CCC-Industry4/StarterGuide/blob/main/01_initializing_router.md)  
+- [Building Smart home](https://github.com/CCC-Industry4/StarterGuide/blob/main/02_building_smart_home.md)
+- [Initialize Raspberry Pi](https://github.com/CCC-Industry4/StarterGuide/blob/main/03_initialize_raspberry_pi.md)
   -  [Cloning github repository on the Pi]()
   -  [Downloading Ignition Gateway on the Pi]()
   -  [Installing MQTT Modules on Ignition]()
