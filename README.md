@@ -49,4 +49,5 @@ Optional:
 - [Lab 3. Operation Smart Home Neighborhood](https://github.com/CCC-Industry4/StarterGuide/blob/main/07_operation_smart_home_neighborhood.md)
 - [Lab 4. Troubleshooting](https://github.com/CCC-Industry4/StarterGuide/blob/main/08_troubleshooting.md)
 
+### [Indutry 4.0 PowerPoint](https://docs.google.com/presentation/d/1RTdsWulPext4mxPflkVPRlp7vQk2u_fBCdiXWWHHBMw/edit?usp=sharing)
 ---
