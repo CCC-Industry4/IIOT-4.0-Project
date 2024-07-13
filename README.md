@@ -33,7 +33,8 @@ Optional:
 - [Case SmartiPi Touch 2](https://www.adafruit.com/product/4377?gad_source=1&gclid=CjwKCAjwqMO0BhA8EiwAFTLgIMRqNCXHAhp_l-yysnQuAGzoeCjPC7tV8XhQrg3Q21p99cGYjvx5rBoCb64QAvD_BwE) - $35
  
   <img src="https://github.com/user-attachments/assets/3f5fcbb1-25a9-42d6-ae0f-e2ca17844d25" style="width: 20%;" alt="4377-04">
-
+- Opto 22 GRV-RIO-LC - $1,095
+![image](https://github.com/user-attachments/assets/baf884df-4738-427b-814a-6525a1b212ee)
 
 ---
 ## Table Of Contents
