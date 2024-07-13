@@ -35,7 +35,7 @@ Optional:
   <img src="https://github.com/user-attachments/assets/3f5fcbb1-25a9-42d6-ae0f-e2ca17844d25" style="width: 20%;" alt="4377-04">
 - Opto 22 [GRV-RIO-LC](https://www.opto22.com/products/product-container/grv-rio-lc) - $1,095
 
-  *This system is for more advanced training for college programs.*
+  *This system is for more advanced training for college programs.  This system shows how industry deploys Industry 4.0 technology.*
   
 ![image](https://github.com/user-attachments/assets/baf884df-4738-427b-814a-6525a1b212ee)
 
