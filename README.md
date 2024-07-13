@@ -24,15 +24,15 @@ This repository will provide instructions for setting up a system to create an I
 
 - Router [GL.iNet GL-AR300M16-Ext](https://www.amazon.com/GL-iNet-GL-AR300M16-Ext-Pre-Installed-Performance-Programmable/dp/B07794JRC5/ref=sr_1_1?crid=E6RCLYD0MYST&dib=eyJ2IjoiMSJ9.dSqXUJxV4NYM_XUkI9m2xZ_CZYyfFSBF3Qz8-p0E5QLaePcA7euAphGYXUyVel1NxfMDJwEsjoKBKu9J8V7dObSacWI9uQCPaQtszObA_v7V7qCwT5lnC_aY1z8PmEfTAzjI1xy3kK0aZ87tkQHvXplGHVZXqOyKKA4WxzskDMUThFYTTIB5UnPLDBfxi4Pt.0URhTJVv6eVaFmatyx1OKhylgLsxRRjAYgNUAt8PQBw&dib_tag=se&keywords=GL-AR300M16&qid=1720832426&s=electronics&sprefix=%2Celectronics%2C390&sr=1-1) or any router
 
-  ![41gQQAA8ozL _AC_SL1000_](https://github.com/user-attachments/assets/8f36c3b7-f8ef-4a87-8133-f80b9922bc74)
-
 <img src="https://github.com/user-attachments/assets/8f36c3b7-f8ef-4a87-8133-f80b9922bc74" style="width: 50%;" alt="41gQQAA8ozL _AC_SL1000_">
 
   
 Optional:
 - Touchscreen Raspberry Pi 7" Touch Screen Display - $75
 - Case SmartiPi Touch 2 - $35
-  ![4377-04](https://github.com/user-attachments/assets/3f5fcbb1-25a9-42d6-ae0f-e2ca17844d25)
+ 
+  <img src="https://github.com/user-attachments/assets/3f5fcbb1-25a9-42d6-ae0f-e2ca17844d25" style="width: 50%;" alt="4377-04">
+
 
 ---
 ## Table Of Contents
