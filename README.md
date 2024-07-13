@@ -13,16 +13,17 @@ This repository will provide instructions for setting up a system to create an I
 
 
 ## Kit Components To Purchase
-- Raspberry Pi 4 or Pi 400 - ~$100
+The following are the components used in this project.  Depending on the situtation different components maybe used to replace the following.
+- Raspberry Pi 4 or Pi 400 - $100
 
    <img src="https://github.com/user-attachments/assets/4806f096-aa6b-4e5b-b601-6692c7f613c4" style="width: 20%;" alt="71A14Sz2bWL _AC_SL1500_">
 
 
-- Arduino ESP43 - [KEYESTUDIO ESP32 Smart House](https://www.keyestudio.com/products/keyestudio-esp32-smart-home-kit-for-esp32-diy-starter-kit-edu) $55
+- Arduino ESP43 - [KEYESTUDIO ESP32 Smart House](https://www.keyestudio.com/products/keyestudio-esp32-smart-home-kit-for-esp32-diy-starter-kit-edu) - $55
 
 <img src="https://github.com/user-attachments/assets/3cebbbc6-9c92-4065-af2b-c9d46f695485" style="width: 20%;" alt="71aY7HXNc5L _AC_SL1500_">
 
-- Router [GL.iNet GL-AR300M16-Ext](https://store-us.gl-inet.com/products/gl-ar300m16-mini-smart-router) or most any router $30
+- Router [GL.iNet GL-AR300M16-Ext](https://store-us.gl-inet.com/products/gl-ar300m16-mini-smart-router) or most any router - $30
 
 <img src="https://github.com/user-attachments/assets/8f36c3b7-f8ef-4a87-8133-f80b9922bc74" style="width: 20%;" alt="41gQQAA8ozL _AC_SL1000_">
 
