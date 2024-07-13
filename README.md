@@ -14,6 +14,7 @@ This repository will provide instructions for setting up a system to create an I
 - Raspberry Pi
 - Arduino ESP43 - Smart House
 - Router
+  
 Optional:
 - Touchscreen
 - Touchscreen  
