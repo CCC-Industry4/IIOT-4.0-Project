@@ -24,7 +24,7 @@ Optional:
 ## Table Of Contents
 
 ### If you are starting with unconfigured components…
-- [Initialize Router](StarterGuide/01_initializing_router.md)  
+- [Initialize Router]([StarterGuide/01_initializing_router.md](https://github.com/CCC-Industry4/StarterGuide/blob/main/01_initializing_router.md))  
 - [Building Smart home](02_building_smart_home.md)
 - [Initialize Raspberry Pi](03_initialize_raspberry_pi.md)
   -  [Cloning github repository on the Pi]()
