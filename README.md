@@ -52,6 +52,7 @@ Optional:
 - [Lab 2b. Configure Smart Home](https://github.com/CCC-Industry4/StarterGuide/blob/main/06_configure_smart_home.md)
 - [Lab 3. Operation Smart Home Neighborhood](https://github.com/CCC-Industry4/StarterGuide/blob/main/07_operation_smart_home_neighborhood.md)
 - [Lab 4. Troubleshooting](https://github.com/CCC-Industry4/StarterGuide/blob/main/08_troubleshooting.md)
+- [8 Labs on creating a Printed Circuit Board](https://docs.google.com/document/d/13rz4dXHV7b0cbep-HrDET545i4Urjr8j9SfGMteeJzM/edit?usp=sharing) This can be used to creat custom boards for the ESP32.
 
 ### Training Materials
  - [Indutry 4.0 PowerPoint](https://docs.google.com/presentation/d/1RTdsWulPext4mxPflkVPRlp7vQk2u_fBCdiXWWHHBMw/edit?usp=sharing)
