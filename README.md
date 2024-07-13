@@ -24,9 +24,9 @@ This repository will provide instructions for setting up a system to create an I
   
 Optional:
 - Touchscreen Raspberry Pi 7" Touch Screen Display - $75
+- Case SmartiPi Touch 2 - $35
   ![4377-04](https://github.com/user-attachments/assets/3f5fcbb1-25a9-42d6-ae0f-e2ca17844d25)
 
-- Case SmartiPi Touch 2 - $35
 ---
 ## Table Of Contents
 
