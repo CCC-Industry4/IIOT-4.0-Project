@@ -36,7 +36,7 @@ Optional:
 - Opto 22 GRV-RIO-LC - $1,095
   
 ![image](https://github.com/user-attachments/assets/baf884df-4738-427b-814a-6525a1b212ee)
-***This system is for more advanced training for college programs.***
+*This system is for more advanced training for college programs.*
 ---
 ## Table Of Contents
 
