@@ -12,7 +12,8 @@ from flask import Flask, render_template, Response
 config = configparser.ConfigParser()
 config.read('configfile.ini')
 
-VIDEO_INPUT = int(config['YOLOv5']['VideoInput'])
+#VIDEO_INPUT = int(config['YOLOv5']['VideoInput'])
+VIDEO_INPUT = 'http://192.168.10.3:81/stream'
 WIDTH = int(config['YOLOv5']['Width'])
 HEIGHT = int(config['YOLOv5']['Height'])
 CLASSES = json.loads(config['YOLOv5']['Classes'])
@@ -33,6 +34,7 @@ class Camera:
     # do camera stuff
     vid = cv2.VideoCapture(VIDEO_INPUT) 
     img = vid.read()[1]
+
     pic = img
     prev = "{}"
 
@@ -42,11 +44,12 @@ class Camera:
         self.vid.set(cv2.CAP_PROP_FRAME_HEIGHT, self.height) 
 
     def _detect(self):
-        # if there is no camera, throw excpetion
-    
         # read img
-        readimg = cv2.cvtColor(self.pic, cv2.COLOR_BGR2RGB)  
-    
+        try:
+            readimg = cv2.cvtColor(self.pic, cv2.COLOR_BGR2RGB) 
+        except:
+            return {}
+
         # do object detection
         result = model(readimg, size=INFERENCE_SIZE) 
     
@@ -90,14 +93,25 @@ class Camera:
 
     def detect(self):
         while True:
-            vid = cv2.VideoCapture("http://192.168.10.161:8081") 
             start = time.process_time();
             self._detect()
-            print(time.process_time() - start);
 
     def _reader(self):
-         while True:
-             _, self.pic = self.vid.read() 
+        while True:
+            if self.vid.isOpened():
+                while True:
+                    _, self.pic = self.vid.read() 
+                    if not _:
+                        self.vid.release()
+                        break
+            else:
+                while True:
+                    self.vid = cv2.VideoCapture(VIDEO_INPUT) 
+                    if self.vid.isOpened():
+                        break
+                    else:
+                        self.vid.release();
+
 
 
     def start(self):
