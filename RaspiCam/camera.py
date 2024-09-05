@@ -12,13 +12,15 @@ app = Flask(__name__)
 def gen_frames():
     while True:
         image = picam2.capture_array()
-        ret, buffer = cv2.imencode('.jpg', image)
+        thing = cv2.rotate(image, cv2.ROTATE_90_COUNTERCLOCKWISE)
+        thing = cv2.cvtColor(thing, cv2.COLOR_BGR2RGB)
+        ret, buffer = cv2.imencode('.jpg', thing)
         frame = buffer.tobytes()
 
         yield(b'--frame\r\n'b'Content-Type: image/jpeg\r\n\r\n' + frame + b'\r\n')
 
 @app.route('/stream')
-def video_feed():
+def stream():
     return Response(gen_frames(), mimetype='multipart/x-mixed-replace; boundary=frame')
 
 @app.route('/')
