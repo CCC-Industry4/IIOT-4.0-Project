@@ -35,8 +35,8 @@ app = Flask(__name__)
 class Camera:
     # do camera stuff
     url = VIDEO_INPUT
-    vid = cv2.VideoCapture(-1)
-    img = vid.read()[0]
+    vid = cv2.VideoCapture() 
+    img = vid.read()[1]
 
     pic = img
     prev = "{}"
