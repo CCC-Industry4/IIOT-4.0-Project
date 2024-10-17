@@ -16,17 +16,22 @@
 #include <LiquidCrystal_I2C.h>
 
 // Configuration
+// *CHANGE THESE
 const char* ssid = "IT4Project";
 const char* password = "IOT12345";
 const char* mqtt_server = "192.168.10.2";
 
-//#define SMARTHOME
-#define SMARTFARM
+// Set model
+#define SMARTHOME
+//#define SMARTFARM
+
+// End of Config
 
 // Import Pins
 #include "pins.h"
 
 // Initialize Namespace
+// controls
 static char control1[100];
 static char control2[100];
 static char control3[100];
@@ -115,7 +120,7 @@ void setup(){
   setup_wifi();
 
   // Set pins
-  #ifdef LEDPin
+#ifdef LEDPin
   pinMode(LEDPin, OUTPUT);
 #endif
 #ifdef buzzerPin
@@ -147,26 +152,28 @@ void setup(){
 #endif
 
   // RFID
-  #ifdef RFID
+#ifdef RFID
   mfrc522.PCD_Init();                                      // Init MFRC522 board.
   MFRC522Debug::PCD_DumpVersionToSerial(mfrc522, Serial);  // Show details of PCD - MFRC522 Card Reader details.
   Serial.println(F("Scan PICC to see UID, SAK, type, and data blocks..."));
-  #endif 
+#endif 
 
   ledcSetup(5, 1200, 8);      //Set the LEDC channel 1 frequency to 1200 and the PWM resolution to 8, that is, the duty cycle is 256.
   ledcAttachPin(fanPin2, 5);  //Bind LEDC channel 1 to the specified left motor pin gpio26 for output.
- 
+
   homeNumber = preferences.getInt("home", 0);
   reset = preferences.getBool("reset", false);
   neighborhood  = preferences.getInt("neighborhood", 0);
   home = preferences.getInt("home", 0);
   char mqttnamespace[50];
-  #ifdef SMARTHOME
+
+#ifdef SMARTHOME
   sprintf(mqttnamespace, "Smart Company/Neighborhood %d/Smart Homes/home%d", neighborhood, home);
-  #endif
-  #ifdef SMARTFARM
+#endif
+#ifdef SMARTFARM
   sprintf(mqttnamespace, "Smart Company/Neighborhood %d/Smart Farms/farm%d", neighborhood, home);
-  #endif
+#endif
+
   sprintf(bruh, "N%d/home%d", neighborhood, home);
 
   sprintf(client_subscribe_all, "%s/#", mqttnamespace);
@@ -282,11 +289,12 @@ void loop(){
   waterLevel();
 #endif
 
- #ifdef soilHumidityPin
- soilHumidity();
+#ifdef soilHumidityPin
+  soilHumidity();
 #endif
 }
 
+// Starts webserver
 void webserver(){
   static String readString;
   // Create a client connection
@@ -411,8 +419,8 @@ void setup_wifi() {
 void callback(char* topic, byte* message, unsigned int length) {
   Serial.println("Message arrived!!!");
 
- // Serial.print(topic);
- // Serial.print(": ");
+  // Serial.print(topic);
+  // Serial.print(": ");
   String messageTemp;
   for (int i = 0; i < length; i++) {
     Serial.print((char)message[i]);
@@ -537,240 +545,240 @@ void reconnect() {
       delay(10000);
     }
   }
-  }
+}
 
 #ifdef LEDStripPin
-  void colorWipe(uint32_t color, int wait) {
+void colorWipe(uint32_t color, int wait) {
+  for (int i = 0; i < strip.numPixels(); i++) {  // For each pixel in strip...
+    strip.setPixelColor(i, color);               //  Set pixel's color (in RAM)
+    strip.show();                                //  Update strip to match
+    delay(wait);                                 //  Pause for a moment
+  }
+}
+
+// Rainbow cycle along whole strip. Pass delay time (in ms) between frames.
+void rainbow(int wait) {
+  for (long firstPixelHue = 0; firstPixelHue < 5 * 65536; firstPixelHue += 256) {
     for (int i = 0; i < strip.numPixels(); i++) {  // For each pixel in strip...
-      strip.setPixelColor(i, color);               //  Set pixel's color (in RAM)
-      strip.show();                                //  Update strip to match
-      delay(wait);                                 //  Pause for a moment
+      int pixelHue = firstPixelHue + (i * 65536L / strip.numPixels());
+      strip.setPixelColor(i, strip.gamma32(strip.ColorHSV(pixelHue)));
     }
+    strip.show();  // Update strip with new contents
+    delay(wait);   // Pause for a moment
   }
+}
 
-  // Rainbow cycle along whole strip. Pass delay time (in ms) between frames.
-  void rainbow(int wait) {
-    for (long firstPixelHue = 0; firstPixelHue < 5 * 65536; firstPixelHue += 256) {
-      for (int i = 0; i < strip.numPixels(); i++) {  // For each pixel in strip...
-        int pixelHue = firstPixelHue + (i * 65536L / strip.numPixels());
-        strip.setPixelColor(i, strip.gamma32(strip.ColorHSV(pixelHue)));
+// Rainbow-enhanced theater marquee. Pass delay time (in ms) between frames.
+void theaterChaseRainbow(int wait) {
+  int firstPixelHue = 0;           // First pixel starts at red (hue 0)
+  for (int a = 0; a < 30; a++) {   // Repeat 30 times...
+    for (int b = 0; b < 3; b++) {  //  'b' counts from 0 to 2...
+      strip.clear();               //   Set all pixels in RAM to 0 (off)
+                                   // 'c' counts up from 'b' to end of strip in increments of 3...
+      for (int c = b; c < strip.numPixels(); c += 3) {
+        int hue = firstPixelHue + c * 65536L / strip.numPixels();
+        uint32_t color = strip.gamma32(strip.ColorHSV(hue));  // hue -> RGB
+        strip.setPixelColor(c, color);                        // Set pixel 'c' to value 'color'
       }
-      strip.show();  // Update strip with new contents
-      delay(wait);   // Pause for a moment
+      strip.show();                 // Update strip with new contents
+      delay(wait);                  // Pause for a moment
+      firstPixelHue += 65536 / 90;  // One cycle of color wheel over 90 frames
     }
   }
-
-  // Rainbow-enhanced theater marquee. Pass delay time (in ms) between frames.
-  void theaterChaseRainbow(int wait) {
-    int firstPixelHue = 0;           // First pixel starts at red (hue 0)
-    for (int a = 0; a < 30; a++) {   // Repeat 30 times...
-      for (int b = 0; b < 3; b++) {  //  'b' counts from 0 to 2...
-        strip.clear();               //   Set all pixels in RAM to 0 (off)
-                                     // 'c' counts up from 'b' to end of strip in increments of 3...
-        for (int c = b; c < strip.numPixels(); c += 3) {
-          int hue = firstPixelHue + c * 65536L / strip.numPixels();
-          uint32_t color = strip.gamma32(strip.ColorHSV(hue));  // hue -> RGB
-          strip.setPixelColor(c, color);                        // Set pixel 'c' to value 'color'
-        }
-        strip.show();                 // Update strip with new contents
-        delay(wait);                  // Pause for a moment
-        firstPixelHue += 65536 / 90;  // One cycle of color wheel over 90 frames
-      }
-    }
-  }
+}
 #endif
 
-  void count() {
-    value = value + 1;
-    message = value;
-    client.publish(client_count, (char*)message.c_str());
-    mylcd.setCursor(11, 0);
-    //mylcd.print("Count: ");
-    mylcd.print(message);  //Display Count
-    Serial.print(client_count);
-    Serial.print(": ");
-    Serial.println(message);
-  }
+void count() {
+  value = value + 1;
+  message = value;
+  client.publish(client_count, (char*)message.c_str());
+  mylcd.setCursor(11, 0);
+  //mylcd.print("Count: ");
+  mylcd.print(message);  //Display Count
+  Serial.print(client_count);
+  Serial.print(": ");
+  Serial.println(message);
+}
 
 #ifdef dht11PIN
-  void temperature_humidity() {
-    
-    static float humidity = 0;
-    static float oldHumidity = -1;
-    static float temperature = 0;
-    static float oldTemperature = -1;
+void temperature_humidity() {
 
-    if (xht.receive(dht)) {  //Returns true when checked correctly
-                             //temperature = dht[2];  //The integral part of temperature, DHT [3] is the fractional part
-      temperature = dht[2] + dht[3] / 10.0;  //The integral part of temperature, DHT [3] is the fractional part
-      if (temperature != oldTemperature) {
-        Serial.print("Temp:");
-        Serial.print(temperature);
-        Serial.println("C");
-        mylcd.setCursor(0, 1);
-        mylcd.print(temperature, 1);
-        mylcd.print((char)223);
-        mylcd.print("C ");
-        message = String(temperature);
-        client.publish(client_temperature, (char*)message.c_str());
-        oldTemperature = temperature;
-      }
-      //humidity = dht[0];  //The integral part of Humidity, DHT [1] is the fractional part
-      humidity = dht[0] + dht[1] / 10.0;  //The integral part of Humidity, DHT [1] is the fractional part
-      if (humidity != oldHumidity) {
-        Serial.print("Humidity:");
-        Serial.print(humidity);
-        Serial.println("%");
-        mylcd.setCursor(8, 1);
-        mylcd.print(humidity, 1);
-        mylcd.print("% ");
-        message = String(humidity);
-        client.publish(client_humidity, (char*)message.c_str());
-        oldHumidity = humidity;
-      }
-    } else {  //Read error
-      Serial.println("sensor error");
+  static float humidity = 0;
+  static float oldHumidity = -1;
+  static float temperature = 0;
+  static float oldTemperature = -1;
+
+  if (xht.receive(dht)) {  //Returns true when checked correctly
+                           //temperature = dht[2];  //The integral part of temperature, DHT [3] is the fractional part
+    temperature = dht[2] + dht[3] / 10.0;  //The integral part of temperature, DHT [3] is the fractional part
+    if (temperature != oldTemperature) {
+      Serial.print("Temp:");
+      Serial.print(temperature);
+      Serial.println("C");
+      mylcd.setCursor(0, 1);
+      mylcd.print(temperature, 1);
+      mylcd.print((char)223);
+      mylcd.print("C ");
+      message = String(temperature);
+      client.publish(client_temperature, (char*)message.c_str());
+      oldTemperature = temperature;
     }
+    //humidity = dht[0];  //The integral part of Humidity, DHT [1] is the fractional part
+    humidity = dht[0] + dht[1] / 10.0;  //The integral part of Humidity, DHT [1] is the fractional part
+    if (humidity != oldHumidity) {
+      Serial.print("Humidity:");
+      Serial.print(humidity);
+      Serial.println("%");
+      mylcd.setCursor(8, 1);
+      mylcd.print(humidity, 1);
+      mylcd.print("% ");
+      message = String(humidity);
+      client.publish(client_humidity, (char*)message.c_str());
+      oldHumidity = humidity;
+    }
+  } else {  //Read error
+    Serial.println("sensor error");
   }
+}
 #endif
 
 #ifdef motionPin
-  void motion() {
-    static bool motionOld = 1;
-    static bool motionNew = 0;
-    motionNew = digitalRead(motionPin);
-    if (motionOld != motionNew) {
-      message = String(motionNew);
-      client.publish(client_motion, (char*)message.c_str());
-      Serial.print(client_motion);
-      Serial.print(": ");
-      Serial.println(message);
-      motionOld = motionNew;
-    }
+void motion() {
+  static bool motionOld = 1;
+  static bool motionNew = 0;
+  motionNew = digitalRead(motionPin);
+  if (motionOld != motionNew) {
+    message = String(motionNew);
+    client.publish(client_motion, (char*)message.c_str());
+    Serial.print(client_motion);
+    Serial.print(": ");
+    Serial.println(message);
+    motionOld = motionNew;
   }
+}
 #endif
 
 #ifdef gasPin
-  void gas() {
-    static bool gasOld = 0;
-    static bool gasNew = 1;
-    gasNew = digitalRead(gasPin);
-    if (gasOld != gasNew) {
-      message = String(gasNew);
-      client.publish(client_gas, (char*)message.c_str());
-      Serial.print(client_gas);
-      Serial.print(": ");
-      Serial.println(message);
-      gasOld = gasNew;
-    }
+void gas() {
+  static bool gasOld = 0;
+  static bool gasNew = 1;
+  gasNew = digitalRead(gasPin);
+  if (gasOld != gasNew) {
+    message = String(gasNew);
+    client.publish(client_gas, (char*)message.c_str());
+    Serial.print(client_gas);
+    Serial.print(": ");
+    Serial.println(message);
+    gasOld = gasNew;
   }
+}
 #endif
 
 #ifdef pushbutton1Pin
-  void pushbuttons() {
-    static bool pushbutton1Old = 0;
-    static bool pushbutton1New = 1;
+void pushbuttons() {
+  static bool pushbutton1Old = 0;
+  static bool pushbutton1New = 1;
 
-    pushbutton1New = digitalRead(pushbutton1Pin);
-    if (pushbutton1Old != pushbutton1New) {
-      message = String(pushbutton1New);
-      client.publish(client_pushbutton1, (char*)message.c_str());
-      Serial.print(client_pushbutton1);
-      Serial.print(": ");
-      Serial.println(message);
-      pushbutton1Old = pushbutton1New;
-    }
+  pushbutton1New = digitalRead(pushbutton1Pin);
+  if (pushbutton1Old != pushbutton1New) {
+    message = String(pushbutton1New);
+    client.publish(client_pushbutton1, (char*)message.c_str());
+    Serial.print(client_pushbutton1);
+    Serial.print(": ");
+    Serial.println(message);
+    pushbutton1Old = pushbutton1New;
+  }
 
 #ifdef pushbutton2Pin
-    static bool pushbutton2Old = 1;
-    static bool pushbutton2New = 1;
-    pushbutton2New = digitalRead(pushbutton2Pin);
-    if (pushbutton2Old != pushbutton2New) {
-      message = String(pushbutton2New);
-      client.publish(client_pushbutton2, (char*)message.c_str());
-      Serial.print(client_pushbutton2);
-      Serial.print(": ");
-      Serial.println(message);
-      pushbutton2Old = pushbutton2New;
-    }
-#endif
+  static bool pushbutton2Old = 1;
+  static bool pushbutton2New = 1;
+  pushbutton2New = digitalRead(pushbutton2Pin);
+  if (pushbutton2Old != pushbutton2New) {
+    message = String(pushbutton2New);
+    client.publish(client_pushbutton2, (char*)message.c_str());
+    Serial.print(client_pushbutton2);
+    Serial.print(": ");
+    Serial.println(message);
+    pushbutton2Old = pushbutton2New;
   }
+#endif
+}
 #endif
 
 #ifdef touchPin
-  void touch() {
-    static int touchOld = -1;
-    static int touchNew = 0;
-    touchNew = touchRead(touchPin);
-    if (touchOld != touchNew) {
-      message = String(touchNew);
-      client.publish(client_touch, (char*)message.c_str());
-      Serial.print(client_touch);
-      Serial.print(": ");
-      Serial.println(message);
-      touchOld = touchNew;
-    }
+void touch() {
+  static int touchOld = -1;
+  static int touchNew = 0;
+  touchNew = touchRead(touchPin);
+  if (touchOld != touchNew) {
+    message = String(touchNew);
+    client.publish(client_touch, (char*)message.c_str());
+    Serial.print(client_touch);
+    Serial.print(": ");
+    Serial.println(message);
+    touchOld = touchNew;
   }
+}
 #endif
 
 #ifdef RFID
-  String rfid() {
-    if (!mfrc522.PICC_IsNewCardPresent() || !mfrc522.PICC_ReadCardSerial()) {
-      return "null";
-    }
-
-    // Save the UID
-    storedUID = mfrc522.uid;
-
-    // Clear the previous UID value
-    message = "";
-
-    // Construct UID value as a string
-    for (byte i = 0; i < storedUID.size; ++i) {
-      message += (storedUID.uidByte[i] < 0x10 ? "0" : "");
-      message += String(storedUID.uidByte[i], HEX);
-    }
-
-    // Convert the entire string to uppercase
-    message.toUpperCase();
-
-    //publish to MQTT
-    client.publish(client_rfid, (char*)message.c_str());
-
-    // Print UID to Serial
-    Serial.print(F("UID Value: "));
-    Serial.println(message);
-    return message;
+String rfid() {
+  if (!mfrc522.PICC_IsNewCardPresent() || !mfrc522.PICC_ReadCardSerial()) {
+    return "null";
   }
+
+  // Save the UID
+  storedUID = mfrc522.uid;
+
+  // Clear the previous UID value
+  message = "";
+
+  // Construct UID value as a string
+  for (byte i = 0; i < storedUID.size; ++i) {
+    message += (storedUID.uidByte[i] < 0x10 ? "0" : "");
+    message += String(storedUID.uidByte[i], HEX);
+  }
+
+  // Convert the entire string to uppercase
+  message.toUpperCase();
+
+  //publish to MQTT
+  client.publish(client_rfid, (char*)message.c_str());
+
+  // Print UID to Serial
+  Serial.print(F("UID Value: "));
+  Serial.println(message);
+  return message;
+}
 #endif
 
 #ifdef waterLevelPin
-  void waterLevel(){
-    static int waterLevelOld = -1;
-    static int waterLevelNew = 0;
-    waterLevelNew = analogRead(waterLevelPin);
-    if (waterLevelNew != waterLevelOld) {
-      message = String(waterLevelNew);
-      client.publish(client_water, (char*)message.c_str());
-      Serial.print(client_touch);
-      Serial.print(": ");
-      Serial.println(message);
-      waterLevelOld = waterLevelNew;
-    }
+void waterLevel(){
+  static int waterLevelOld = -1;
+  static int waterLevelNew = 0;
+  waterLevelNew = analogRead(waterLevelPin);
+  if (waterLevelNew != waterLevelOld) {
+    message = String(waterLevelNew);
+    client.publish(client_water, (char*)message.c_str());
+    Serial.print(client_touch);
+    Serial.print(": ");
+    Serial.println(message);
+    waterLevelOld = waterLevelNew;
   }
+}
 #endif
- #ifdef soilHumidityPin
-  void soilHumidity(){
-    static int waterLevelOld = -1;
-    static int waterLevelNew = 0;
-    waterLevelNew = analogRead(soilHumidityPin);
-    if (waterLevelNew != waterLevelOld) {
-      message = String(waterLevelNew);
-      client.publish(client_soil, (char*)message.c_str());
-      Serial.print(client_touch);
-      Serial.print(": ");
-      Serial.println(message);
-      waterLevelOld = waterLevelNew;
-    }
+#ifdef soilHumidityPin
+void soilHumidity(){
+  static int waterLevelOld = -1;
+  static int waterLevelNew = 0;
+  waterLevelNew = analogRead(soilHumidityPin);
+  if (waterLevelNew != waterLevelOld) {
+    message = String(waterLevelNew);
+    client.publish(client_soil, (char*)message.c_str());
+    Serial.print(client_touch);
+    Serial.print(": ");
+    Serial.println(message);
+    waterLevelOld = waterLevelNew;
   }
+}
 #endif
