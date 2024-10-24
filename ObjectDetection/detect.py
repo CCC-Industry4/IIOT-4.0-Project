@@ -27,7 +27,9 @@ ADDRESS = IP + ":" + PORT
 # load yolov5 model
 torch.hub.set_dir('./cache')
 model = torch.hub.load('ultralytics/yolov5', 'yolov5n', '--img 160 --half', _verbose=False)
+#model = torch.hub.load('ultralytics/yolov5', 'custom', 'best.pt', force_reload=False)
 model.classes = CLASSES 
+
 
 # initialize flask
 app = Flask(__name__)

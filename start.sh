@@ -11,6 +11,7 @@ if [ -f /usr/local/ignition/gwcmd.sh ]; then
 			sudo pkill chromium-browser
 			DISPLAY=:0 chromium-browser --start-fullscreen http://localhost:8088/data/perspective/client/I4Project/smarthome &
 			cd ~/IIOT-4.0-Project/ObjectDetection && ./start.sh
+			sudo python ~/IIOT-4.0-Project/RaspiCam/camera.py &
 			break
 		fi
 	done
