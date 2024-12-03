@@ -4,8 +4,7 @@
 #include <Wire.h>       
 #include <ESPmDNS.h>
 #include <Adafruit_NeoPixel.h>
-#include <ESP32Tone.h>
-#include <analogWrite.h>
+#include <Buzzer.h>
 #include <ESP32Servo.h>
 #include <MFRC522v2.h>
 #include <MFRC522DriverI2C.h>
@@ -158,8 +157,8 @@ void setup(){
   Serial.println(F("Scan PICC to see UID, SAK, type, and data blocks..."));
 #endif 
 
-  ledcSetup(5, 1200, 8);      //Set the LEDC channel 1 frequency to 1200 and the PWM resolution to 8, that is, the duty cycle is 256.
-  ledcAttachPin(fanPin2, 5);  //Bind LEDC channel 1 to the specified left motor pin gpio26 for output.
+  //ledcSetup(5, 1200, 8);      //Set the LEDC channel 1 frequency to 1200 and the PWM resolution to 8, that is, the duty cycle is 256.
+  //ledcAttachPin(fanPin2, 5);  //Bind LEDC channel 1 to the specified left motor pin gpio26 for output.
 
   homeNumber = preferences.getInt("home", 0);
   reset = preferences.getBool("reset", false);
@@ -438,6 +437,9 @@ void callback(char* topic, byte* message, unsigned int length) {
   static Servo Dservo;
   static Servo Wservo;
 
+  // Buzzer 
+  Buzzer buzz(buzzerPin);
+
 #ifdef SMARTHOME
   if (String(topic) == control1) {
     digitalWrite(LEDPin, messageTemp.toInt());
@@ -448,19 +450,17 @@ void callback(char* topic, byte* message, unsigned int length) {
     if (messageTemp.toInt() == 1) Dservo.write(180);  //Open Door
     else Dservo.write(0);                             //Close Door
     delay(500);
-    pinMode(doorServo, INPUT_PULLUP);  //must turn off because of interferance with buzzer
   }
   if (String(topic) == control3) {
     Wservo.attach(windowServo);
     if (messageTemp.toInt() == 1) Wservo.write(165);  //Open Window
     else Wservo.write(50);                            //Close Window
     delay(500);
-    pinMode(windowServo, INPUT_PULLUP);  //must turn off because of interferance with buzzer
   }
   if (String(topic) == control4 && (messageTemp == "1")) {
-    pinMode(buzzerPin, OUTPUT);
-    tone(buzzerPin, 392, 250, 0);
-    pinMode(buzzerPin, INPUT_PULLUP);  //must turn off because of interferance with buzzer
+    //pinMode(buzzerPin, OUTPUT);
+    //pinMode(buzzerPin, INPUT_PULLUP);  //must turn off because of interferance with buzzer
+    buzz.sound(165, 100);
   }
   if (String(topic) == LEDcolorStrip) {
     if (messageTemp.toInt() == 0) colorWipe(strip.Color(0, 0, 0), 50);        //LED strip off
@@ -479,9 +479,9 @@ void callback(char* topic, byte* message, unsigned int length) {
   }
   if (String(topic) == control5) {
     if (messageTemp.toFloat())
-      analogWrite(fanPin1, (messageTemp.toFloat()) * 130 + 125, 255);
+      analogWrite(fanPin1, (messageTemp.toFloat()) * 130 + 125);
     else
-      analogWrite(fanPin1, 0, 255);
+      analogWrite(fanPin1, 0);
     digitalWrite(fanPin2, LOW);
   }
 #endif
@@ -498,7 +498,7 @@ void callback(char* topic, byte* message, unsigned int length) {
   }
   if (String(topic) == control3) {
     pinMode(buzzerPin, OUTPUT);
-    tone(buzzerPin, messageTemp.toFloat(), 250, 0);
+    tone(buzzerPin, 200, 250, 0);
     pinMode(buzzerPin, INPUT_PULLUP);  //must turn off because of interferance with buzzer
   }
   if (String(topic) == control4) {
@@ -506,9 +506,9 @@ void callback(char* topic, byte* message, unsigned int length) {
   }
   if (String(topic) == control5) {
     if (messageTemp.toFloat())
-      analogWrite(fanPin1, (messageTemp.toFloat()) * 130 + 125, 255);
+      analogWrite(fanPin1, (messageTemp.toFloat()) * 130 + 125);
     else
-      analogWrite(fanPin1, 0, 255);
+      analogWrite(fanPin1, 0);
     digitalWrite(fanPin2, LOW);
   }
 #endif
