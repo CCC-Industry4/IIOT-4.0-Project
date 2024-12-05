@@ -21,8 +21,8 @@ const char* password = "IOT12345";
 const char* mqtt_server = "192.168.10.2";
 
 // Set model
-#define SMARTHOME
-//#define SMARTFARM
+//#define SMARTHOME
+#define SMARTFARM
 
 // End of Config
 
@@ -494,12 +494,9 @@ void callback(char* topic, byte* message, unsigned int length) {
     if (messageTemp.toInt() == 1) Dservo.write(180);  //Open Door
     else Dservo.write(80);                             //Close Door
     delay(500);
-    pinMode(doorServo, INPUT_PULLUP);  //must turn off because of interferance with buzzer
   }
   if (String(topic) == control3) {
-    pinMode(buzzerPin, OUTPUT);
-    tone(buzzerPin, 200, 250, 0);
-    pinMode(buzzerPin, INPUT_PULLUP);  //must turn off because of interferance with buzzer
+    buzz.sound(165, 100);
   }
   if (String(topic) == control4) {
     digitalWrite(relayPin, messageTemp.toInt());
