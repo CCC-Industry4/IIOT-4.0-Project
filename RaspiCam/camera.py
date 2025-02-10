@@ -28,5 +28,5 @@ def index():
     return render_template('index.html')
 
 if __name__ == "__main__":
+    publish.single("Smart Company/Neighborhood 2/Object Detection/Camera0", "192.168.10.2",hostname="192.168.10.2")
     app.run(host="192.168.10.2",port=81,debug=True, use_reloader=False)
-    publish.single("Smart Company/Neighborhood 2/Object Detection/Camera3", "192.168.10.2",hostname="192.168.10.2")

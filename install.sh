@@ -12,11 +12,10 @@ echo "@lxpanel --profile LXDE-pi
 @point-rpi
 @lxterminal
 @leafpad
-@~/test.sh
-@~/thing.sh" >~/.config/lxsession/LXDE-pi/autostart
+" >~/.config/lxsession/LXDE-pi/autostart
 
 git clone https://github.com/CCC-Industry4/IIOT-4.0-Project ~/IIOT-4.0-Project
 
 echo "xinput -set-prop \"10-0038 generic ft5x06 (79)\" \"Coordinate Transformation Matrix\" -1 0 1 0 -1 1 0 0 1
 ~/IIOT-4.0-Project/start.sh
-" > ~/.xsessionrc
+" >~/.xsessionrc
