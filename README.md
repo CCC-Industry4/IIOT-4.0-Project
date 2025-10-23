@@ -2,7 +2,7 @@
 ---
 ## Sponsored by the National Science Foundation (Award Number: 2202201)
 **Instructors:** Matthew Graff and William (Bill) Kerney  
-**Student Workers:** Neiro Cabrera, Meagan Eggert, Julian Perry Laxamana, Gurkaran Singh  
+**Student Workers:** Neiro Cabrera, Meagan Eggert, Julian Perry Laxamana, Gurkaran Singh, Mohammad Abumaali  
 **School:** Clovis Community College in Fresno, California
 
 ## Project Description
@@ -42,7 +42,7 @@ Optional:
 ---
 ## Table Of Contents
 
-To install the project, run following command in Raspberry Pi terminal with WiFi connection:
+To install the project, run the following command in Raspberry Pi terminal with WiFi connection:
 ```
    curl -o- https://raw.githubusercontent.com/CCC-Industry4/IIOT-4.0-Project/main/install.sh | bash -x
 ```
