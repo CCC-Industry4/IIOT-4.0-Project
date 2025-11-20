@@ -2,7 +2,7 @@
 ---
 ## Sponsored by the National Science Foundation (Award Number: 2202201)
 **Instructors:** Matthew Graff and William (Bill) Kerney  
-**Student Workers:** Neiro Cabrera, Meagan Eggert, Julian Perry Laxamana, Gurkaran Singh, Mohammad Abumaali  
+**Student Workers:** Neiro Cabrera, Meagan Eggert, Julian Perry Laxamana, Gurkaran Singh, Mohammad Abumaali  :)
 **School:** Clovis Community College in Fresno, California
 
 ## Project Description
