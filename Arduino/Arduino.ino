@@ -17,6 +17,7 @@
 // Configuration
 // *CHANGE THESE
 //hello
+//yo
 const char* ssid = "IT4Project";
 const char* password = "IOT12345";
 const char* mqtt_server = "192.168.10.2";
