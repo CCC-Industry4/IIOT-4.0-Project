@@ -1,10 +1,10 @@
 // Libraries
-#include <WiFi.h>       
-#include <PubSubClient.h>  
-#include <Wire.h>       
+#include <WiFi.h>
+#include <PubSubClient.h>
+#include <Wire.h>
 #include <ESPmDNS.h>
 #include <Adafruit_NeoPixel.h>
-#include <Buzzer.h>
+#include <Buzzer.h>  //this one needed to be added, library name "Buzzer" by Giuseppe Martini
 #include <ESP32Servo.h>
 #include <MFRC522v2.h>
 #include <MFRC522DriverI2C.h>
@@ -16,13 +16,14 @@
 
 // Configuration
 // *CHANGE THESE
+//hello
 const char* ssid = "IT4Project";
 const char* password = "IOT12345";
 const char* mqtt_server = "192.168.10.2";
 
 // Set model
-//#define SMARTHOME
-#define SMARTFARM
+#define SMARTHOME
+//#define SMARTFARM
 
 // End of Config
 
@@ -59,8 +60,11 @@ static char client_water[100];
 static char client_soil[100];
 
 bool reset = false;
-int homeNumber = 5;
-Preferences preferences;
+// 10-9-25: editing between comment 1 and 2 (this is comment 1)
+//int homeNumber = 5; // original line
+Preferences preferences;  // this line also originally here but i want to keep it
+int homeNumber = 0;
+//comment 2
 
 // LED STRIP
 #ifdef LEDStripPin
@@ -105,12 +109,12 @@ int home;
 
 char bruh[50];
 
-void setup(){
+void setup() {
   // Begin Serial
   Serial.begin(115200);
 
   // Begin Preferences
-  preferences.begin("smarthome", false); 
+  preferences.begin("smarthome", false);
 
   // Set up LCD
   mylcd.init();
@@ -123,13 +127,15 @@ void setup(){
   pinMode(LEDPin, OUTPUT);
 #endif
 #ifdef buzzerPin
-  pinMode(buzzerPin,OUTPUT);
+  pinMode(buzzerPin, OUTPUT);
 #endif
 #ifdef motionPin
   pinMode(motionPin, INPUT_PULLUP);
 #endif
 #ifdef gasPin
   pinMode(gasPin, INPUT_PULLUP);
+  message = "";
+  client.publish(client_gas, (char*)message.c_str());
 #endif
 #ifdef pushbutton1Pin
   pinMode(pushbutton1Pin, INPUT_PULLUP);
@@ -149,20 +155,23 @@ void setup(){
 #ifdef fanpin2
   pinMode(fanPin2, OUTPUT);
 #endif
-
+  message = " 123";
+  client.publish(client_rfid, (char*)message.c_str());
   // RFID
 #ifdef RFID
+  message = " ";
+  client.publish(client_rfid, (char*)message.c_str());
   mfrc522.PCD_Init();                                      // Init MFRC522 board.
   MFRC522Debug::PCD_DumpVersionToSerial(mfrc522, Serial);  // Show details of PCD - MFRC522 Card Reader details.
   Serial.println(F("Scan PICC to see UID, SAK, type, and data blocks..."));
-#endif 
+#endif
 
   //ledcSetup(5, 1200, 8);      //Set the LEDC channel 1 frequency to 1200 and the PWM resolution to 8, that is, the duty cycle is 256.
   //ledcAttachPin(fanPin2, 5);  //Bind LEDC channel 1 to the specified left motor pin gpio26 for output.
 
   homeNumber = preferences.getInt("home", 0);
   reset = preferences.getBool("reset", false);
-  neighborhood  = preferences.getInt("neighborhood", 0);
+  neighborhood = preferences.getInt("neighborhood", 0);
   home = preferences.getInt("home", 0);
   char mqttnamespace[50];
 
@@ -217,7 +226,7 @@ void setup(){
 
 #ifdef pushbutton1Pin
 #ifdef pushbutton2Pin
-  if (!reset || (!digitalRead(pushbutton1Pin) && !digitalRead(pushbutton2Pin))){
+  if (!reset || (!digitalRead(pushbutton1Pin) && !digitalRead(pushbutton2Pin))) {
     mylcd.clear();
     mylcd.setCursor(0, 0);
     mylcd.print("Connect to URL:");
@@ -227,7 +236,7 @@ void setup(){
     config = true;
   }
 #else
-  if (!reset || (!digitalRead(pushbutton1Pin))){
+  if (!reset || (!digitalRead(pushbutton1Pin))) {
     mylcd.clear();
     mylcd.setCursor(0, 0);
     mylcd.print("Connect to URL:");
@@ -238,12 +247,13 @@ void setup(){
   }
 #endif
 #endif
-
 }
 
-void loop(){
+void loop() {
   static long lastMsg = 0;
-  if (config){
+  neighborhood = preferences.getInt("neighborhood", 0);
+  home = preferences.getInt("home", 0);
+  if (config) {
     webserver();
     return;
   }
@@ -252,14 +262,18 @@ void loop(){
     delay(500);
     mylcd.clear();
     mylcd.setCursor(0, 0);
-    mylcd.print(mqttNamespaceString.substring(mqttNamespaceString.indexOf("Neighborhood ") + 13).c_str());
+    //10-9-25: MOHAMMAD TRYING SOMETHING WITHOUT A BACKUP BETWEEN THIS COMMENT AND COMMENT 2
+    sprintf(bruh, "N%d/home%d", neighborhood, home);
+    mylcd.print(bruh);
+    //mylcd.print(mqttNamespaceString.substring(mqttNamespaceString.indexOf("Neighborhood ") + 13).c_str()); // this was the only original line between comment 1 and 2
+    //COMMENT 2
   }
   client.loop();
 
   long now = millis();
   if (now - lastMsg > 1000) {  //update every second
     lastMsg = now;
-    count();                 //increase count every second
+    count();  //increase count every second
 #ifdef dht11PIN
     temperature_humidity();  //temprature & humidity
 #endif
@@ -294,7 +308,7 @@ void loop(){
 }
 
 // Starts webserver
-void webserver(){
+void webserver() {
   static String readString;
   // Create a client connection
   WiFiClient client = server.available();
@@ -306,14 +320,14 @@ void webserver(){
         //read char by char HTTP request
         if (readString.length() < 100) {
 
-          //store characters to string 
-          readString += c; 
+          //store characters to string
+          readString += c;
           //Serial.print(c);
-        } 
+        }
 
         //if HTTP request has ended
         if (c == '\n') {
-          Serial.println(readString); //see what was captured
+          Serial.println(readString);  //see what was captured
 
           //now output HTML data header
 
@@ -329,7 +343,7 @@ void webserver(){
 
           client.println("<H1 align='center'>Smart Home Configuration</H1>");
 
-          client.println("<FORM ACTION='/' method=get align='center'>"); //uses IP/port of web page
+          client.println("<FORM ACTION='/' method=get align='center'>");  //uses IP/port of web page
           client.println("Enter Neighborhood Number: <INPUT TYPE=number NAME='neighborhood' VALUE=0 min=0>");
 
           client.println("Enter Home Number: <INPUT TYPE=number NAME='home' VALUE=0 min=0>");
@@ -337,7 +351,7 @@ void webserver(){
           client.println("</FORM>");
 
 
-          client.println("<FORM ACTION='/' method=get align='center'>"); //uses IP/port of web page
+          client.println("<FORM ACTION='/' method=get align='center'>");  //uses IP/port of web page
           client.println("<INPUT TYPE=SUBMIT NAME='default' VALUE='Reset to Default Settings'>");
           client.println("</FORM>");
 
@@ -348,12 +362,12 @@ void webserver(){
           client.stop();
 
           Serial.println(readString);
-          if(readString.indexOf("default=Reset+to+Default+Settings") >0)//checks for off
+          if (readString.indexOf("default=Reset+to+Default+Settings") > 0)  //checks for off
           {
             preferences.putBool("reset", false);
             reset = false;
           }
-          if(readString.indexOf("reset=Finalize+and+Reset") >0)//checks for reset
+          if (readString.indexOf("reset=Finalize+and+Reset") > 0)  //checks for reset
           {
             String thing = readString.substring(readString.indexOf("?neighborhood=") + 14);
             String neighborhood = thing.substring(0, thing.indexOf("&"));
@@ -366,7 +380,7 @@ void webserver(){
             abort();
           }
           //clearing string for next read
-          readString="";
+          readString = "";
         }
       }
     }
@@ -374,6 +388,7 @@ void webserver(){
 }
 
 void setup_wifi() {
+  homeNumber = preferences.getInt("home", 0);
   Serial.println("hello");
   delay(10);
   mylcd.clear();
@@ -437,7 +452,7 @@ void callback(char* topic, byte* message, unsigned int length) {
   static Servo Dservo;
   static Servo Wservo;
 
-  // Buzzer 
+  // Buzzer
   Buzzer buzz(buzzerPin);
 
 #ifdef SMARTHOME
@@ -492,7 +507,7 @@ void callback(char* topic, byte* message, unsigned int length) {
   if (String(topic) == control2) {
     Dservo.attach(doorServo);
     if (messageTemp.toInt() == 1) Dservo.write(180);  //Open Door
-    else Dservo.write(80);                             //Close Door
+    else Dservo.write(80);                            //Close Door
     delay(500);
   }
   if (String(topic) == control3) {
@@ -589,7 +604,7 @@ void count() {
   value = value + 1;
   message = value;
   client.publish(client_count, (char*)message.c_str());
-  mylcd.setCursor(11, 0);
+  mylcd.setCursor(9, 0);
   //mylcd.print("Count: ");
   mylcd.print(message);  //Display Count
   Serial.print(client_count);
@@ -605,8 +620,8 @@ void temperature_humidity() {
   static float temperature = 0;
   static float oldTemperature = -1;
 
-  if (xht.receive(dht)) {  //Returns true when checked correctly
-                           //temperature = dht[2];  //The integral part of temperature, DHT [3] is the fractional part
+  if (xht.receive(dht)) {                  //Returns true when checked correctly
+                                           //temperature = dht[2];  //The integral part of temperature, DHT [3] is the fractional part
     temperature = dht[2] + dht[3] / 10.0;  //The integral part of temperature, DHT [3] is the fractional part
     if (temperature != oldTemperature) {
       Serial.print("Temp:");
@@ -687,7 +702,7 @@ void pushbuttons() {
   }
 
 #ifdef pushbutton2Pin
-  static bool pushbutton2Old = 1;
+  static bool pushbutton2Old = 0;
   static bool pushbutton2New = 1;
   pushbutton2New = digitalRead(pushbutton2Pin);
   if (pushbutton2Old != pushbutton2New) {
@@ -720,8 +735,10 @@ void touch() {
 
 #ifdef RFID
 String rfid() {
+  //message = " ";
+  //client.publish(client_rfid, (char*)message.c_str());
   if (!mfrc522.PICC_IsNewCardPresent() || !mfrc522.PICC_ReadCardSerial()) {
-    return "null";
+    return "";
   }
 
   // Save the UID
@@ -750,7 +767,7 @@ String rfid() {
 #endif
 
 #ifdef waterLevelPin
-void waterLevel(){
+void waterLevel() {
   static int waterLevelOld = -1;
   static int waterLevelNew = 0;
   waterLevelNew = analogRead(waterLevelPin);
@@ -765,7 +782,7 @@ void waterLevel(){
 }
 #endif
 #ifdef soilHumidityPin
-void soilHumidity(){
+void soilHumidity() {
   static int waterLevelOld = -1;
   static int waterLevelNew = 0;
   waterLevelNew = analogRead(soilHumidityPin);
