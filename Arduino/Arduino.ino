@@ -1,22 +1,33 @@
 // Libraries
+// --- Networking / MQTT ---
 #include <WiFi.h>
 #include <PubSubClient.h>
-#include <Wire.h>
 #include <ESPmDNS.h>
-#include <Adafruit_NeoPixel.h>
-#include <Buzzer.h>  //this one needed to be added, library name "Buzzer" by Giuseppe Martini
-#include <ESP32Servo.h>
+#include <Preferences.h>
+
+// --- I2C / Sensors ---
+#include <Wire.h>
+#include "xht11.h"          // DHT11 sensor
+#include <SPI.h>
 #include <MFRC522v2.h>
 #include <MFRC522DriverI2C.h>
 #include <MFRC522Debug.h>
-#include "xht11.h"
-#include <SPI.h>
-#include <Preferences.h>
-#include <LiquidCrystal_I2C.h>
 
-// Configuration
-// *CHANGE THESE
-const char* ssid = "IT4Project";
+// --- Output devices ---
+#include <Adafruit_NeoPixel.h>
+#include <Buzzer.h>          // Buzzer by Giuseppe Martini
+#include <ESP32Servo.h>
+
+// --- Display ---
+#include <LiquidCrystal_I2C.h>  // Consider ESP32-compatible fork
+
+//******************CONFIGURATION******************
+
+// ***CHANGE THESE IF NEEDED*** 
+//These are defaults that can be changed during configuration
+int value = 0;
+int homeNumber = 0;
+const char* ssid = "IT4Project";  
 const char* password = "IOT12345";
 const char* mqtt_server = "192.168.10.2";
 
@@ -24,8 +35,20 @@ const char* mqtt_server = "192.168.10.2";
 #define SMARTHOME
 //#define SMARTFARM
 
-// End of Config
+//*************END OF CONFIGURATION*************
 
+
+char ssid_config[32];
+char pass_config[32];
+char mqtt_server_config[40];  // stored broker IP
+
+// ACTIVE WIFI CREDS USED BY setup_wifi()
+//const char* wifi_ssid;
+//const char* wifi_pass;
+
+// ACTIVE WiFi credentials (used by setup_wifi)
+const char* wifi_ssid = nullptr;
+const char* wifi_pass = nullptr;
 // Import Pins
 #include "pins.h"
 
@@ -58,12 +81,8 @@ static char client_touch[100];
 static char client_water[100];
 static char client_soil[100];
 
-bool reset = false;
-// 10-9-25: editing between comment 1 and 2 (this is comment 1)
-//int homeNumber = 5; // original line
-Preferences preferences;  // this line also originally here but i want to keep it
-int homeNumber = 0;
-//comment 2
+
+Preferences preferences; 
 
 // LED STRIP
 #ifdef LEDStripPin
@@ -93,35 +112,33 @@ WiFiServer server(80);
 WiFiClient esp32Client;
 PubSubClient client(esp32Client);
 
-// config
-bool config = false;
-String mqttNamespaceString;
 
 // other stuff
+bool reset = false;
+bool config = false;
 char msg[50];
-int value = 0;
 
-String message = "0";
 
 int neighborhood;
 int home;
+String message = "0";
+String mqttNamespaceString;
+
 
 char bruh[50];
 
 void setup() {
-  // Begin Serial
+  // --- Serial ----------------------------------------------------
   Serial.begin(115200);
 
-  // Begin Preferences
+  // --- Preferences -----------------------------------------------
   preferences.begin("smarthome", false);
 
-  // Set up LCD
+  // --- LCD --------------------------------------------------------
   mylcd.init();
   mylcd.backlight();
 
-  setup_wifi();
-
-  // Set pins
+  // --- Pin Setup (no #ifdef in logic, you can keep the macros if needed) ---
 #ifdef LEDPin
   pinMode(LEDPin, OUTPUT);
 #endif
@@ -151,27 +168,77 @@ void setup() {
 #ifdef fanPin1
   pinMode(fanPin1, OUTPUT);
 #endif
-#ifdef fanpin2
+#ifdef fanPin2
   pinMode(fanPin2, OUTPUT);
 #endif
-  message = " 123";
-  client.publish(client_rfid, (char*)message.c_str());
-  // RFID
-#ifdef RFID
-  message = " ";
-  client.publish(client_rfid, (char*)message.c_str());
-  mfrc522.PCD_Init();                                      // Init MFRC522 board.
-  MFRC522Debug::PCD_DumpVersionToSerial(mfrc522, Serial);  // Show details of PCD - MFRC522 Card Reader details.
-  Serial.println(F("Scan PICC to see UID, SAK, type, and data blocks..."));
+
+  // --- Check buttons BEFORE connecting WiFi -----------------------
+#ifdef pushbutton1Pin
+#ifdef pushbutton2Pin
+  bool buttonsHeld = (!digitalRead(pushbutton1Pin) && !digitalRead(pushbutton2Pin));
+#else
+  bool buttonsHeld = (!digitalRead(pushbutton1Pin));
+#endif
+#else
+  bool buttonsHeld = false;
 #endif
 
-  //ledcSetup(5, 1200, 8);      //Set the LEDC channel 1 frequency to 1200 and the PWM resolution to 8, that is, the duty cycle is 256.
-  //ledcAttachPin(fanPin2, 5);  //Bind LEDC channel 1 to the specified left motor pin gpio26 for output.
-
-  homeNumber = preferences.getInt("home", 0);
+  // Load stored flags
   reset = preferences.getBool("reset", false);
+
+  // If either:
+  // • stored reset flag is false (no config)
+  // • user is holding both reset buttons
+  // then go into SOFT AP config mode
+  if (!reset || buttonsHeld) {
+    Serial.println("Entering CONFIG MODE");
+    mylcd.clear();
+    mylcd.setCursor(0, 0);
+    mylcd.print("Config Mode");
+
+    // --- SOFT AP MODE --------------------------------------------
+    WiFi.mode(WIFI_AP);
+    WiFi.softAP("SmartHomeConfig", "12345678");
+    delay(200);
+
+    IPAddress IP = WiFi.softAPIP();
+    Serial.print("AP IP: ");
+    Serial.println(IP);
+
+    mylcd.setCursor(0, 1);
+    mylcd.print(IP.toString());
+
+    server.begin();
+    config = true;
+    return;  // <<< STOP normal startup
+  }
+
+  // --- NORMAL MODE (WiFi STA) ------------------------------------
+  // Load stored WiFi (if they exist)
+String storedSSID  = preferences.getString("wifi_ssid", ssid);
+String storedPASS  = preferences.getString("wifi_pass", password);
+
+// Convert to C strings
+storedSSID.toCharArray(ssid_config, 32);
+storedPASS.toCharArray(pass_config, 32);
+
+// Select which WiFi credentials to use:
+if (!reset) {
+  // FIRST TIME: use defaults at top
+  wifi_ssid = ssid;
+  wifi_pass = password;
+} else {
+  // AFTER CONFIG: use stored preferences
+  wifi_ssid = ssid_config;
+  wifi_pass = pass_config;
+}
+  setup_wifi();
+
+  // --- MQTT topics ------------------------------------------------
+  homeNumber = preferences.getInt("home", 0);
   neighborhood = preferences.getInt("neighborhood", 0);
   home = preferences.getInt("home", 0);
+
   char mqttnamespace[50];
 
 #ifdef SMARTHOME
@@ -204,49 +271,37 @@ void setup() {
   sprintf(client_message, "%s/out/message", mqttnamespace);
   sprintf(client_rfid, "%s/rfid", mqttnamespace);
 
+#ifdef RFID
+  mfrc522.PCD_Init();
+  MFRC522Debug::PCD_DumpVersionToSerial(mfrc522, Serial);
+  Serial.println("Scan PICC...");
+#endif
+
+  // --- MQTT Connect -----------------------------------------------
   if (!client.connected()) {
     reconnect();
     delay(500);
-    message = String(0);
-    client.publish(LEDcolorStrip, (char*)message.c_str());
+
+    message = "0";
+    client.publish(LEDcolorStrip, message.c_str());
     message = "null";
-    client.publish(control1, (char*)message.c_str());
-    client.publish(control2, (char*)message.c_str());
-    client.publish(control3, (char*)message.c_str());
-    client.publish(control4, (char*)message.c_str());
-    client.publish(control5, (char*)message.c_str());
-    Serial.println("intital values sent");
+
+    client.publish(control1, message.c_str());
+    client.publish(control2, message.c_str());
+    client.publish(control3, message.c_str());
+    client.publish(control4, message.c_str());
+    client.publish(control5, message.c_str());
+
+    Serial.println("Initial values sent");
   }
 
+  // --- Display Info -----------------------------------------------
   delay(500);
   mylcd.clear();
   mylcd.setCursor(0, 0);
   mylcd.print(bruh);
-
-#ifdef pushbutton1Pin
-#ifdef pushbutton2Pin
-  if (!reset || (!digitalRead(pushbutton1Pin) && !digitalRead(pushbutton2Pin))) {
-    mylcd.clear();
-    mylcd.setCursor(0, 0);
-    mylcd.print("Connect to URL:");
-    mylcd.setCursor(2, 1);
-    mylcd.println(WiFi.localIP().toString());
-    server.begin();
-    config = true;
-  }
-#else
-  if (!reset || (!digitalRead(pushbutton1Pin))) {
-    mylcd.clear();
-    mylcd.setCursor(0, 0);
-    mylcd.print("Connect to URL:");
-    mylcd.setCursor(2, 1);
-    mylcd.println(WiFi.localIP().toString());
-    server.begin();
-    config = true;
-  }
-#endif
-#endif
 }
+
 
 void loop() {
   static long lastMsg = 0;
@@ -306,79 +361,191 @@ void loop() {
 #endif
 }
 
+
+void onClientConnect(WiFiEvent_t event, WiFiEventInfo_t info) {
+  Serial.println("Client connected to AP!");
+  Serial.print("Browse to: ");
+  Serial.println(WiFi.softAPIP());
+
+  mylcd.clear();
+  mylcd.setCursor(0, 0);
+  mylcd.print("Browse to:");
+  mylcd.setCursor(0, 1);
+  mylcd.print(WiFi.softAPIP().toString());
+}
+
 // Starts webserver
 void webserver() {
+  const char* ssid_AP = "Config_ESP32";
+  const char* password_AP = "12345678";
   static String readString;
-  // Create a client connection
-  WiFiClient client = server.available();
-  if (client) {
+
+  Serial.println("Setting up Access Point...");
+
+  // Load stored values from Preferences
+  String storedSSID = preferences.getString("wifi_ssid", ssid);
+  storedSSID.toCharArray(ssid_config, 32);
+
+  String storedPASS = preferences.getString("wifi_pass", password);
+  storedPASS.toCharArray(pass_config, 32);
+
+  String storedMQTT = preferences.getString("mqtt_ip", mqtt_server);
+  storedMQTT.toCharArray(mqtt_server_config, 40);
+
+  int storedNeighborhood = preferences.getInt("neighborhood", 0);
+  int storedHome = preferences.getInt("home", 0);
+
+  // -----------------------------
+  // START ACCESS POINT
+  // -----------------------------
+  WiFi.mode(WIFI_AP);
+  WiFi.softAP(ssid_AP, password_AP);
+
+  // --- NEW: Display SSID + Password ---
+  Serial.println();
+  Serial.println("====== ACCESS POINT STARTED ======");
+  Serial.print("SSID: ");
+  Serial.println(ssid_AP);
+  Serial.print("Password: ");
+  Serial.println(password_AP);
+
+  // LCD
+  mylcd.clear();
+  mylcd.setCursor(0, 0);
+  mylcd.print("SSID:");
+  mylcd.print(ssid_AP);
+  mylcd.setCursor(0, 1);
+  mylcd.print("PASS:");
+  mylcd.print(password_AP);
+
+  // Get IP
+  IPAddress IP = WiFi.softAPIP();
+  Serial.print("AP IP address: ");
+  Serial.println(IP);
+
+
+  // -----------------------------
+  // START WEB SERVER (must be before server.available())
+  // -----------------------------
+  server.begin();
+  Serial.println("Web server started");
+
+  WiFi.onEvent(onClientConnect, ARDUINO_EVENT_WIFI_AP_STACONNECTED);
+
+
+  config = true;
+
+  // -----------------------------
+  // SERVE FOREVER until reset button used
+  // -----------------------------
+  while (true) {
+    WiFiClient client = server.available();
+    if (!client) continue;
+
+    readString = "";
+
     while (client.connected()) {
       if (client.available()) {
         char c = client.read();
+        readString += c;
 
-        //read char by char HTTP request
-        if (readString.length() < 100) {
-
-          //store characters to string
-          readString += c;
-          //Serial.print(c);
-        }
-
-        //if HTTP request has ended
+        // End of HTTP request
         if (c == '\n') {
-          Serial.println(readString);  //see what was captured
 
-          //now output HTML data header
-
+          // --------------------------
+          // SEND CONFIG HTML PAGE
+          // --------------------------
           client.println("HTTP/1.1 200 OK");
-          client.println("Content-Type: text/html");
-          client.println();
+          client.println("Content-Type: text/html\n");
+          client.println("<html><head><title>Config</title>");
+          client.println("<style>");
+          client.println("body { font-size: 22px; font-family: Arial; }");  // <--- bigger text
+          client.println("input { font-size: 22px; padding: 5px; }");       // <--- bigger boxes
+          client.println("h2 { font-size: 28px; }");                        // <--- bigger header
+          client.println("</style>");
+          client.println("</head><body>");
+          client.println("<h2>Smart Home Configuration</h2>");
+          client.println("<form method='get' action='/'>");
+          client.println("Enter Neighborhood Number: "
+                         "<input type='number' name='neighborhood' value='"
+                         + String(storedNeighborhood) + "' min='0'>"
+                                                        "<br>");
+          client.println("Enter Home Number: "
+                         "<input type='number' name='home' value='"
+                         + String(storedHome) + "' min='0'>"
+                                                "<br>");
+          client.println("MQTT Broker IP: "
+                         "<input type='text' name='mqttip' value='"
+                         + String(storedMQTT) + "'>"
+                                                "<br>");
+          client.println("WiFi SSID: "
+                         "<input type='text' name='wifissid' value='"
+                         + String(ssid_config) + "'>"
+                                                 "<br>");
+          client.println("WiFi Password: "
+                         "<input type='text' name='wifipass' value='"
+                         + String(pass_config) + "'>"
+                                                 "<br><br>");
+          client.println("<input type='submit' name='reset' value='Finalize and Reset ESP32'>");
+          client.println("</form><br>");
+          client.println("<form method='get' action='/'>");
+          client.println("<input type='submit' name='default' value='Reset to Default Settings'>");
+          client.println("</form>");
+          client.println("</body></html>");
 
-          client.println("<HTML>");
-          client.println("<HEAD>");
-          client.println("<TITLE >Smart Home Configuration</TITLE>");
-          client.println("</HEAD>");
-          client.println("<BODY>");
-
-          client.println("<H1 align='center'>Smart Home Configuration</H1>");
-
-          client.println("<FORM ACTION='/' method=get align='center'>");  //uses IP/port of web page
-          client.println("Enter Neighborhood Number: <INPUT TYPE=number NAME='neighborhood' VALUE=0 min=0>");
-
-          client.println("Enter Home Number: <INPUT TYPE=number NAME='home' VALUE=0 min=0>");
-          client.println("<INPUT TYPE=SUBMIT NAME='reset' VALUE='Finalize and Reset'>");
-          client.println("</FORM>");
-
-
-          client.println("<FORM ACTION='/' method=get align='center'>");  //uses IP/port of web page
-          client.println("<INPUT TYPE=SUBMIT NAME='default' VALUE='Reset to Default Settings'>");
-          client.println("</FORM>");
-
-          client.println("</BODY>");
-          client.println("</HTML>");
-
-          delay(1);
           client.stop();
 
           Serial.println(readString);
-          if (readString.indexOf("default=Reset+to+Default+Settings") > 0)  //checks for off
-          {
+
+          // --------------------------
+          // RESET TO DEFAULTS
+          // --------------------------
+          if (readString.indexOf("default=Reset+to+Default+Settings") > 0) {
             preferences.putBool("reset", false);
             reset = false;
+            return;  // return to main loop
           }
-          if (readString.indexOf("reset=Finalize+and+Reset") > 0)  //checks for reset
-          {
-            String thing = readString.substring(readString.indexOf("?neighborhood=") + 14);
-            String neighborhood = thing.substring(0, thing.indexOf("&"));
-            thing = thing.substring(thing.indexOf("&home=") + 6);
-            String home = thing.substring(0, thing.indexOf("&"));
+
+          // --------------------------
+          // FINALIZE AND RESET DEVICE
+          // --------------------------
+          if (readString.indexOf("reset=Finalize+and+Reset") > 0) {
+
+            auto getParam = [&](String key) {
+              if (readString.indexOf(key + "=") < 0) return String("");
+              String part = readString.substring(readString.indexOf(key + "=") + key.length() + 1);
+              if (part.indexOf("&") >= 0) part = part.substring(0, part.indexOf("&"));
+              if (part.indexOf(" ") >= 0) part = part.substring(0, part.indexOf(" "));
+              part.trim();
+              part.replace("+", " ");
+              return part;
+            };
+
+            String nVal = getParam("neighborhood");
+            String hVal = getParam("home");
+            String mqttVal = getParam("mqttip");
+            String ssidVal = getParam("wifissid");
+            String passVal = getParam("wifipass");
+
+            Serial.println("Parsed values:");
+            Serial.println(nVal);
+            Serial.println(hVal);
+            Serial.println(mqttVal);
+            Serial.println(ssidVal);
+            Serial.println(passVal);
+
+            // Save all updated config
             preferences.putBool("reset", true);
-            preferences.putInt("neighborhood", neighborhood.toInt());
-            preferences.putInt("home", home.toInt());
-            reset = true;
-            abort();
+            preferences.putInt("neighborhood", nVal.toInt());
+            preferences.putInt("home", hVal.toInt());
+            preferences.putString("mqtt_ip", mqttVal);
+            preferences.putString("wifi_ssid", ssidVal);
+            preferences.putString("wifi_pass", passVal);
+
+            delay(300);
+            ESP.restart();
           }
-          //clearing string for next read
+
           readString = "";
         }
       }
@@ -386,7 +553,18 @@ void webserver() {
   }
 }
 
+
+
 void setup_wifi() {
+  //client.setServer(mqtt_server, 1883);
+  String storedSSID = preferences.getString("wifi_ssid", ssid);
+storedSSID.toCharArray(ssid_config, 32);
+String storedPASS = preferences.getString("wifi_pass", password);
+storedPASS.toCharArray(pass_config, 32);
+String storedMQTT = preferences.getString("mqtt_ip", mqtt_server);
+storedMQTT.toCharArray(mqtt_server_config, 40);
+mqtt_server = mqtt_server_config;
+
   homeNumber = preferences.getInt("home", 0);
   Serial.println("hello");
   delay(10);
@@ -395,12 +573,14 @@ void setup_wifi() {
   mylcd.print("/home" + String(homeNumber));
   mylcd.setCursor(0, 1);
   mylcd.print("SSID: ");
-  mylcd.print(String(ssid));
+  mylcd.print(String(wifi_ssid));
   Serial.println();
   Serial.print("Connecting to ");
-  Serial.println(ssid);
+  Serial.println(wifi_ssid);
   //WiFi.config(ip);
-  WiFi.begin(ssid, password);
+  //WiFi.begin(ssid, password);
+  WiFi.begin(wifi_ssid, wifi_pass);
+
   if (WiFi.status() != WL_CONNECTED) {
     delay(1000);
     mylcd.clear();
@@ -423,7 +603,10 @@ void setup_wifi() {
   Serial.println("WiFi connected");
   Serial.println("IP address: ");
   Serial.println(WiFi.localIP());
-  client.setServer(mqtt_server, 1883);
+
+  client.setServer(mqtt_server_config, 1883);
+  Serial.print("Using MQTT Broker: ");
+  Serial.println(mqtt_server_config);
   client.setCallback(callback);
   delay(1000);
 }
@@ -543,7 +726,8 @@ void reconnect() {
       mylcd.print("MQTT Connected");
       mylcd.setCursor(0, 1);
       mylcd.print("W/");
-      mylcd.print(String(mqtt_server));
+      //mylcd.print(String(mqtt_server));
+      mylcd.print(String(mqtt_server_config));
     } else {
       Serial.print("failed, rc=");
       Serial.print(client.state());
