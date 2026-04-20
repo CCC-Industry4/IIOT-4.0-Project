@@ -870,31 +870,41 @@ void gas() {
 void pushbuttons() {
   static bool pushbutton1Old = 0;
   static bool pushbutton1New = 1;
+  static unsigned long lastTime1 = 0;
 
   pushbutton1New = digitalRead(pushbutton1Pin);
-  if (pushbutton1Old != pushbutton1New) {
+  
+  if (pushbutton1Old != pushbutton1New && (millis() - lastTime1) > 300) {
     message = String(pushbutton1New);
     client.publish(client_pushbutton1, (char*)message.c_str());
     Serial.print(client_pushbutton1);
-    Serial.print(": ");
+    Serial.print(" ");
     Serial.println(message);
+    
     pushbutton1Old = pushbutton1New;
+    lastTime1 = millis();
   }
 
 #ifdef pushbutton2Pin
   static bool pushbutton2Old = 0;
   static bool pushbutton2New = 1;
+  static unsigned long lastTime2 = 0;
+
   pushbutton2New = digitalRead(pushbutton2Pin);
-  if (pushbutton2Old != pushbutton2New) {
+  
+  if (pushbutton2Old != pushbutton2New && (millis() - lastTime2) > 300) {
     message = String(pushbutton2New);
     client.publish(client_pushbutton2, (char*)message.c_str());
     Serial.print(client_pushbutton2);
-    Serial.print(": ");
+    Serial.print(" ");
     Serial.println(message);
+    
     pushbutton2Old = pushbutton2New;
+    lastTime2 = millis();
   }
 #endif
 }
+
 #endif
 
 #ifdef touchPin
