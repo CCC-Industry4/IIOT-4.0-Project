@@ -316,11 +316,8 @@ void loop() {
     delay(500);
     mylcd.clear();
     mylcd.setCursor(0, 0);
-    //10-9-25: MOHAMMAD TRYING SOMETHING WITHOUT A BACKUP BETWEEN THIS COMMENT AND COMMENT 2
     sprintf(bruh, "N%d/home%d", neighborhood, home);
     mylcd.print(bruh);
-    //mylcd.print(mqttNamespaceString.substring(mqttNamespaceString.indexOf("Neighborhood ") + 13).c_str()); // this was the only original line between comment 1 and 2
-    //COMMENT 2
   }
   client.loop();
 
