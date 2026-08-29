@@ -2,7 +2,7 @@
 ---
 ## Sponsored by the National Science Foundation (Award Number: 2202201)
 **Instructors:** Matthew Graff and William (Bill) Kerney  
-**Student Workers:** Neiro Cabrera, Meagan Eggert, Julian Perry Laxamana, Gurkaran Singh, Mohammad Abumaali, Benjamin Hallaway  :)
+**Student Workers:** Neiro Cabrera, Meagan Eggert, Julian Perry Laxamana, Gurkaran Singh, Mohammad Abumaali, Benjamin Hallaway  :), David Rosas
 **School:** Clovis Community College in Fresno, California
 
 ## Project Description
@@ -13,7 +13,7 @@ This repository will provide instructions for setting up a system to create an I
 
 
 ## Kit Components To Purchase
-The following are the components used in this project.  Depending on the situtation different components maybe used to replace the following.
+The following are the components used in this project.  Depending on the situation different components maybe used to replace the following.
 - Raspberry Pi 4 or Pi 400 - $100
 
    <img src="https://github.com/user-attachments/assets/4806f096-aa6b-4e5b-b601-6692c7f613c4" style="width: 20%;" alt="71A14Sz2bWL _AC_SL1500_">
@@ -57,8 +57,8 @@ To install the project, run the following command in Raspberry Pi terminal with 
 - [Lab 2b. Configure Smart Home](https://github.com/CCC-Industry4/StarterGuide/blob/main/06_configure_smart_home.md)
 - [Lab 3. Operation Smart Home Neighborhood](https://github.com/CCC-Industry4/StarterGuide/blob/main/07_operation_smart_home_neighborhood.md)
 - [Lab 4. Troubleshooting](https://github.com/CCC-Industry4/StarterGuide/blob/main/08_troubleshooting.md)
-- [8 Labs on creating a Printed Circuit Board](https://docs.google.com/document/d/13rz4dXHV7b0cbep-HrDET545i4Urjr8j9SfGMteeJzM/edit?usp=sharing) The PCB can be used to creat custom boards for the ESP32.
+- [8 Labs on creating a Printed Circuit Board](https://docs.google.com/document/d/13rz4dXHV7b0cbep-HrDET545i4Urjr8j9SfGMteeJzM/edit?usp=sharing) The PCB can be used to create custom boards for the ESP32.
 
 ### Training Materials
- - [Indutry 4.0 PowerPoint](https://docs.google.com/presentation/d/1RTdsWulPext4mxPflkVPRlp7vQk2u_fBCdiXWWHHBMw/edit?usp=sharing)
+ - [Industry 4.0 PowerPoint](https://docs.google.com/presentation/d/1RTdsWulPext4mxPflkVPRlp7vQk2u_fBCdiXWWHHBMw/edit?usp=sharing)
 ---
