@@ -1,0 +1,30 @@
+{
+  "name": "WebServer_ESP32_SC_W6100",
+  "version": "1.2.1",
+  "keywords": "WebServer, Ethernet, MQTT, MQTTS, HTTP, HTTPS, SSL, Arduino, ESP32, ESP32-S3, ESP32-S2, ESP32-C3, W6100, HTTP-Client, WebSocket-Client, MQTT-Client, server, client, websocket, LittleFS, SPIFFS, ThingStream",
+  "description": "Simple Ethernet WebServer, HTTP/HTTPS Client wrapper library for ESP32S2/S3/C3 boards using LwIP W6100 Ethernet library. The WebServer supports HTTP(S) GET and POST requests, provides argument parsing, handles one client at a time. It provides HTTP(S), MQTT(S) Client, supports WebServer serving from LittleFS/SPIFFS and is the base for many Async-related libraries",
+  "authors":
+  {
+    "name":  "Khoi Hoang",
+    "url":   "https://github.com/khoih-prog",
+    "maintainer": true
+  },  
+  "repository":
+  {
+    "type": "git",
+    "url": "https://github.com/khoih-prog/WebServer_ESP32_SC_W6100"
+  },
+  "homepage": "https://github.com/khoih-prog/WebServer_ESP32_SC_W6100",
+  "export": {
+    "exclude": [
+      "linux",
+      "extras",
+      "tests"
+    ]
+  },
+  "license": "GPL-3.0",
+  "frameworks": "*",
+  "platforms": "espressif32",
+  "examples": "examples/*/*/*.ino",
+  "headers": ["WebServer_ESP32_SC_W6100.h", "WebServer_ESP32_SC_W6100.hpp"]
+}
