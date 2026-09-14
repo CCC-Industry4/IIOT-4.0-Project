@@ -1,59 +1,75 @@
-// Libraries
-// --- Networking / MQTT ---
+#include <Arduino.h>
 #include <WiFi.h>
 #include <PubSubClient.h>
 #include <ESPmDNS.h>
 #include <Preferences.h>
+#include <DNSServer.h> 
 
-// --- I2C / Sensors ---
 #include <Wire.h>
-#include "xht11.h"          // DHT11 sensor
+#include "xht11.h"          
 #include <SPI.h>
 #include <MFRC522v2.h>
 #include <MFRC522DriverI2C.h>
 #include <MFRC522Debug.h>
 
-// --- Output devices ---
 #include <Adafruit_NeoPixel.h>
-#include <Buzzer.h>          // Buzzer by Giuseppe Martini
+#include <Buzzer.h>          
 #include <ESP32Servo.h>
 
-// --- Display ---
-#include <LiquidCrystal_I2C.h>  // Consider ESP32-compatible fork
+#include <LiquidCrystal_I2C.h>  
 
-//******************CONFIGURATION******************
-
-// ***CHANGE THESE IF NEEDED*** 
-//These are defaults that can be changed during configuration
+// WIP COMM HERE
 int value = 0;
-int homeNumber = 0;
+int homeNumber = 1;
 const char* ssid = "IT4Project";  
 const char* password = "IOT12345";
 const char* mqtt_server = "192.168.10.2";
 
-// Set model
 #define SMARTHOME
-//#define SMARTFARM
-
-//*************END OF CONFIGURATION*************
-
 
 char ssid_config[32];
 char pass_config[32];
-char mqtt_server_config[40];  // stored broker IP
+char mqtt_server_config[40];  
 
-// ACTIVE WIFI CREDS USED BY setup_wifi()
-//const char* wifi_ssid;
-//const char* wifi_pass;
-
-// ACTIVE WiFi credentials (used by setup_wifi)
 const char* wifi_ssid = nullptr;
 const char* wifi_pass = nullptr;
-// Import Pins
-#include "pins.h"
 
-// Initialize Namespace
-// controls
+#include "pins.h"
+#define MAX_RULES 20 
+
+struct Rule {
+  String source;    
+  String op;        
+  String value;     
+  String action;
+  String extra;
+};
+
+Rule smartHomeRules[MAX_RULES];
+bool ruleLastState[MAX_RULES] = {false};
+
+Servo Dservo;
+Servo Wservo;
+
+bool fanIsOn = false;
+bool ledIsOn = false;
+bool doorIsOpen = false;
+bool windowIsOpen = false;
+bool stripIsOn = false;
+
+bool offlineMode = false;
+bool isConfigMode = false; 
+String apNameStr = "";
+String apPassStr = "";
+
+int totalButtonPresses = 0;
+float lastTemp = 0.0;
+float lastHum = 0.0;
+
+int lcdTop = 0;
+int lcdBL = 1;
+int lcdBR = 2;
+
 static char control1[100];
 static char control2[100];
 static char control3[100];
@@ -65,39 +81,31 @@ static char client_topic[100];
 static char client_temperature[100];
 static char client_humidity[100];
 static char client_count[100];
-static char client_sensor1[100];
-static char client_sensor2[100];
 static char client_rfid[100];
 static char client_message[100];
-static char client_stepperSpeed[100];
 static char client_subscribe_all[100];
 static char client_motion[100];
 static char client_pushbutton1[100];
 static char client_pushbutton2[100];
-static char client_yellowLED[100];
-static char client_buzzer[100];
 static char client_gas[100];
 static char client_touch[100];
 static char client_water[100];
 static char client_soil[100];
 
-
 Preferences preferences; 
+DNSServer dnsServer; 
 
-// LED STRIP
 #ifdef LEDStripPin
 Adafruit_NeoPixel strip(LED_COUNT, LEDStripPin, NEO_GRB + NEO_KHZ800);
 #endif
 
-// LCD Screen
 LiquidCrystal_I2C mylcd(0x27, 16, 2);
 
-// RFID
 #ifdef RFID
 const uint8_t customAddress = 0x28;
 TwoWire& customI2C = Wire;
-MFRC522DriverI2C driver{ customAddress, customI2C };  // Create I2C driver.
-MFRC522 mfrc522{ driver };                            // Create MFRC522 instance.
+MFRC522DriverI2C driver{ customAddress, customI2C };  
+MFRC522 mfrc522{ driver };                            
 MFRC522::Uid storedUID;
 #endif
 
@@ -105,40 +113,150 @@ MFRC522::Uid storedUID;
 xht11 xht(dht11PIN);
 #endif
 
-
-// WiFi
-unsigned char dht[4] = { 0, 0, 0, 0 };  //Only the first 32 bits of data are received, not the parity bits
+unsigned char dht[4] = { 0, 0, 0, 0 };  
 WiFiServer server(80);
 WiFiClient esp32Client;
 PubSubClient client(esp32Client);
 
-
-// other stuff
 bool reset = false;
-bool config = false;
-char msg[50];
-
-
 int neighborhood;
 int home;
-String message = "0";
-String mqttNamespaceString;
-
-
 char bruh[50];
 
+void webserver();
+bool connectWiFi(int timeoutSec);
+void handleWiFiFailure();
+void reconnect();
+void count();
+void updateLCD();
+void onClientConnect(WiFiEvent_t event, WiFiEventInfo_t info);
+void callback(char* topic, byte* message, unsigned int length);
+void executeAction(Rule r);
+void stripOff();
+void evaluateRules(String event = "");
+
+#ifdef LEDStripPin
+void colorWipe(uint32_t color, int wait);
+void rainbow(int wait);
+#endif
+
+#ifdef dht11PIN
+void temperature_humidity();
+#endif
+#ifdef motionPin
+void motion();
+#endif
+#ifdef gasPin
+void gas();
+#endif
+#ifdef touchPin
+void touch();
+#endif
+#ifdef RFID
+String rfid();
+#endif
+#ifdef waterLevelPin
+void waterLevel();
+#endif
+#ifdef soilHumidityPin
+void soilHumidity();
+#endif
+
+struct ButtonHandler {
+  int pin;
+  String name;
+  bool lastState = HIGH;
+  unsigned long pressTime = 0;
+  unsigned long releaseTime = 0;
+  int clicks = 0;
+  bool timing = false;
+  bool held = false;
+
+  ButtonHandler(int p, String n) : pin(p), name(n) {}
+
+  String update() {
+    if (pin < 0) return "";
+    bool currentState = digitalRead(pin);
+    unsigned long now = millis();
+    String event = "";
+
+    if (currentState == LOW && lastState == HIGH) {
+      pressTime = now;
+      held = false;
+    }
+    else if (currentState == HIGH && lastState == LOW) {
+      releaseTime = now;
+      if (!held) {
+        clicks++;
+        timing = true;
+      }
+    }
+
+    if (currentState == LOW && !held && (now - pressTime) > 600) {
+      held = true;
+      timing = false;
+      clicks = 0;
+      event = "hold";
+    }
+
+    if (currentState == HIGH && timing && (now - releaseTime) > 250) {
+      if (clicks == 1) event = "tap";
+      else if (clicks >= 2) event = "double";
+      clicks = 0;
+      timing = false;
+    }
+
+    lastState = currentState;
+    return event;
+  }
+};
+
+#ifdef pushbutton1Pin
+ButtonHandler btn1(pushbutton1Pin, "btn1");
+#else
+ButtonHandler btn1(-1, "btn1");
+#endif
+
+#ifdef pushbutton2Pin
+ButtonHandler btn2(pushbutton2Pin, "btn2");
+#else
+ButtonHandler btn2(-1, "btn2");
+#endif
+
+// WIP COMM HERE
 void setup() {
-  // --- Serial ----------------------------------------------------
   Serial.begin(115200);
-
-  // --- Preferences -----------------------------------------------
   preferences.begin("smarthome", false);
+  
+  for (int i = 0; i < MAX_RULES; i++) {
+    smartHomeRules[i].source = preferences.getString(("src" + String(i)).c_str(), "none");
+    smartHomeRules[i].op     = preferences.getString(("op" + String(i)).c_str(), "==");
+    smartHomeRules[i].value  = preferences.getString(("val" + String(i)).c_str(), "");
+    smartHomeRules[i].action = preferences.getString(("a" + String(i)).c_str(), "none");
+    smartHomeRules[i].extra  = preferences.getString(("ext" + String(i)).c_str(), "");
+  }
 
-  // --- LCD --------------------------------------------------------
+  lcdTop = preferences.getInt("lt", 0);
+  lcdBL = preferences.getInt("lbl", 1);
+  lcdBR = preferences.getInt("lbr", 2);
+
+#ifdef doorServo
+  Dservo.attach(doorServo);
+  Dservo.write(0); 
+#endif
+#ifdef windowServo
+  Wservo.attach(windowServo);
+  Wservo.write(50); 
+#endif
+
   mylcd.init();
   mylcd.backlight();
 
-  // --- Pin Setup (no #ifdef in logic, you can keep the macros if needed) ---
+#ifdef LEDStripPin
+  strip.begin(); 
+  strip.show(); 
+#endif
+
 #ifdef LEDPin
   pinMode(LEDPin, OUTPUT);
 #endif
@@ -146,12 +264,10 @@ void setup() {
   pinMode(buzzerPin, OUTPUT);
 #endif
 #ifdef motionPin
-  pinMode(motionPin, INPUT_PULLUP);
+  pinMode(motionPin, INPUT); 
 #endif
 #ifdef gasPin
-  pinMode(gasPin, INPUT_PULLUP);
-  message = "";
-  client.publish(client_gas, (char*)message.c_str());
+  pinMode(gasPin, INPUT); 
 #endif
 #ifdef pushbutton1Pin
   pinMode(pushbutton1Pin, INPUT_PULLUP);
@@ -162,9 +278,6 @@ void setup() {
 #ifdef touchPin
   pinMode(touchPin, INPUT);
 #endif
-#ifdef relayPin
-  pinMode(relayPin, OUTPUT);
-#endif
 #ifdef fanPin1
   pinMode(fanPin1, OUTPUT);
 #endif
@@ -172,91 +285,93 @@ void setup() {
   pinMode(fanPin2, OUTPUT);
 #endif
 
-  // --- Check buttons BEFORE connecting WiFi -----------------------
-#ifdef pushbutton1Pin
-#ifdef pushbutton2Pin
-  bool buttonsHeld = (!digitalRead(pushbutton1Pin) && !digitalRead(pushbutton2Pin));
-#else
-  bool buttonsHeld = (!digitalRead(pushbutton1Pin));
-#endif
-#else
-  bool buttonsHeld = false;
-#endif
-
-  // Load stored flags
   reset = preferences.getBool("reset", false);
+  delay(500); 
 
-  // If either:
-  // • stored reset flag is false (no config)
-  // • user is holding both reset buttons
-  // then go into SOFT AP config mode
-  if (!reset || buttonsHeld) {
-    Serial.println("Entering CONFIG MODE");
-    mylcd.clear();
-    mylcd.setCursor(0, 0);
-    mylcd.print("Config Mode");
-
-    // --- SOFT AP MODE --------------------------------------------
-    WiFi.mode(WIFI_AP);
-    WiFi.softAP("SmartHomeConfig", "12345678");
-    delay(200);
-
-    IPAddress IP = WiFi.softAPIP();
-    Serial.print("AP IP: ");
-    Serial.println(IP);
-
-    mylcd.setCursor(0, 1);
-    mylcd.print(IP.toString());
-
-    server.begin();
-    config = true;
-    return;  // <<< STOP normal startup
+  mylcd.clear();
+  mylcd.setCursor(0, 0);
+  mylcd.print("Press both btns");
+  mylcd.setCursor(0, 1);
+  mylcd.print("for Config (3s)");
+  
+  unsigned long bootTime = millis();
+  while (millis() - bootTime < 3000) {
+#if defined(pushbutton1Pin) && defined(pushbutton2Pin)
+    if (digitalRead(pushbutton1Pin) == LOW && digitalRead(pushbutton2Pin) == LOW) {
+      isConfigMode = true;
+      mylcd.clear();
+      mylcd.setCursor(0, 0); mylcd.print("Config Mode");
+      mylcd.setCursor(0, 1); mylcd.print("Activated!");
+      delay(1000);
+      break;
+    }
+#endif
+    delay(50);
   }
 
-  // --- NORMAL MODE (WiFi STA) ------------------------------------
-  // Load stored WiFi (if they exist)
-String storedSSID  = preferences.getString("wifi_ssid", ssid);
-String storedPASS  = preferences.getString("wifi_pass", password);
+  if (!reset || isConfigMode) {
+    uint16_t entropyName = esp_random() & 0xFFFF;
+    uint32_t entropyPass = esp_random(); 
 
-// Convert to C strings
-storedSSID.toCharArray(ssid_config, 32);
-storedPASS.toCharArray(pass_config, 32);
+    apNameStr = "CONFIG_" + String(entropyName, HEX);
+    apNameStr.toUpperCase();
+    apPassStr = String(entropyPass, HEX);
+    apPassStr.toUpperCase();
+    
+    while(apPassStr.length() < 8) apPassStr += "0";
 
-// Select which WiFi credentials to use:
-if (!reset) {
-  // FIRST TIME: use defaults at top
-  wifi_ssid = ssid;
-  wifi_pass = password;
-} else {
-  // AFTER CONFIG: use stored preferences
-  wifi_ssid = ssid_config;
-  wifi_pass = pass_config;
-}
-  setup_wifi();
+    WiFi.mode(WIFI_AP);
+    WiFi.softAP(apNameStr.c_str(), apPassStr.c_str());
+    delay(500); 
+    
+    dnsServer.start(53, "*", IPAddress(192, 168, 4, 1));
+    server.begin();
+    return; 
+  }
 
-  // --- MQTT topics ------------------------------------------------
-  homeNumber = preferences.getInt("home", 0);
-  neighborhood = preferences.getInt("neighborhood", 0);
-  home = preferences.getInt("home", 0);
+  String storedSSID  = preferences.getString("wifi_ssid", ssid);
+  String storedPASS  = preferences.getString("wifi_pass", password);
+  storedSSID.toCharArray(ssid_config, 32);
+  storedPASS.toCharArray(pass_config, 32);
 
-  char mqttnamespace[50];
+  if (!reset) {
+    wifi_ssid = ssid;
+    wifi_pass = password;
+  } else {
+    wifi_ssid = ssid_config;
+    wifi_pass = pass_config;
+  }
+  
+  mylcd.clear();
+  mylcd.setCursor(0, 0);
+  mylcd.print("Connecting WiFi");
+  
+  if (!connectWiFi(10)) {
+    handleWiFiFailure();
+  }
 
+  homeNumber = preferences.getInt("home", 1);
+  neighborhood = preferences.getInt("neighborhood", 1);
+  home = preferences.getInt("home", 1);
+  
+  if (!offlineMode) {
+    String storedMQTT = preferences.getString("mqtt_ip", mqtt_server);
+    storedMQTT.toCharArray(mqtt_server_config, 40);
+    client.setServer(mqtt_server_config, 1883);
+    client.setCallback(callback);
+  }
+
+  char mqttnamespace[100]; 
 #ifdef SMARTHOME
   sprintf(mqttnamespace, "Smart Company/Neighborhood %d/Smart Homes/home%d", neighborhood, home);
 #endif
-#ifdef SMARTFARM
-  sprintf(mqttnamespace, "Smart Company/Neighborhood %d/Smart Farms/farm%d", neighborhood, home);
-#endif
-
-  sprintf(bruh, "N%d/home%d", neighborhood, home);
-
+  sprintf(bruh, "N%d/H%d", neighborhood, home);
   sprintf(client_subscribe_all, "%s/#", mqttnamespace);
   sprintf(control1, "%s/control1", mqttnamespace);
   sprintf(control2, "%s/control2", mqttnamespace);
   sprintf(control3, "%s/control3", mqttnamespace);
   sprintf(control4, "%s/control4", mqttnamespace);
   sprintf(control5, "%s/control5", mqttnamespace);
-
   sprintf(LEDcolorStrip, "%s/LEDcolorStrip", mqttnamespace);
   sprintf(client_motion, "%s/motion", mqttnamespace);
   sprintf(client_gas, "%s/gas", mqttnamespace);
@@ -268,721 +383,889 @@ if (!reset) {
   sprintf(client_water, "%s/water level", mqttnamespace);
   sprintf(client_soil, "%s/soil", mqttnamespace);
   sprintf(client_count, "%s/count", mqttnamespace);
-  sprintf(client_message, "%s/out/message", mqttnamespace);
-  sprintf(client_rfid, "%s/rfid", mqttnamespace);
 
 #ifdef RFID
   mfrc522.PCD_Init();
-  MFRC522Debug::PCD_DumpVersionToSerial(mfrc522, Serial);
-  Serial.println("Scan PICC...");
 #endif
 
-  // --- MQTT Connect -----------------------------------------------
-  if (!client.connected()) {
+  if (!offlineMode) {
     reconnect();
     delay(500);
-
-    message = "0";
-    client.publish(LEDcolorStrip, message.c_str());
-    message = "null";
-
-    client.publish(control1, message.c_str());
-    client.publish(control2, message.c_str());
-    client.publish(control3, message.c_str());
-    client.publish(control4, message.c_str());
-    client.publish(control5, message.c_str());
-
-    Serial.println("Initial values sent");
+    client.publish(LEDcolorStrip, "0");
   }
 
-  // --- Display Info -----------------------------------------------
   delay(500);
-  mylcd.clear();
-  mylcd.setCursor(0, 0);
-  mylcd.print(bruh);
+  updateLCD();
 }
 
-
+// WIP COMM HERE
 void loop() {
   static long lastMsg = 0;
-  neighborhood = preferences.getInt("neighborhood", 0);
-  home = preferences.getInt("home", 0);
-  if (config) {
+  
+  if (isConfigMode || !reset) {
+    dnsServer.processNextRequest(); 
     webserver();
+    delay(10); 
     return;
   }
-  if (!client.connected()) {
-    reconnect();
-    delay(500);
-    mylcd.clear();
-    mylcd.setCursor(0, 0);
-    sprintf(bruh, "N%d/home%d", neighborhood, home);
-    mylcd.print(bruh);
+  
+  if (!offlineMode) {
+    if (!client.connected()) {
+      static unsigned long lastMqttRetry = 0;
+      if (millis() - lastMqttRetry > 5000) {
+        lastMqttRetry = millis();
+        reconnect();
+        if (client.connected()) updateLCD();
+      }
+    } else {
+      client.loop(); 
+    }
   }
-  client.loop();
 
   long now = millis();
-  if (now - lastMsg > 1000) {  //update every second
+  if (now - lastMsg > 1000) { 
     lastMsg = now;
-    count();  //increase count every second
+    count();  
 #ifdef dht11PIN
-    temperature_humidity();  //temprature & humidity
+    temperature_humidity();  
 #endif
 #ifdef touchPin
     touch();
 #endif
+    updateLCD(); 
+    evaluateRules(""); 
   }
 
 #ifdef gasPin
   gas();
 #endif
-
 #ifdef motionPin
   motion();
 #endif
-
-#ifdef pushbutton1Pin
-  pushbuttons();
-#endif
-
-#ifdef RFID
-  rfid();
-#endif
-
 #ifdef waterLevelPin
   waterLevel();
 #endif
-
 #ifdef soilHumidityPin
   soilHumidity();
 #endif
+#ifdef RFID
+  String currentRfid = rfid();
+  if (currentRfid != "") {
+    evaluateRules("rfid_" + currentRfid);
+  }
+#endif
+
+  String e1 = btn1.update();
+  if (e1 != "") {
+    totalButtonPresses++;
+    if (!offlineMode) client.publish(client_pushbutton1, (char*)("btn1_"+e1).c_str());
+    evaluateRules("btn1_" + e1);
+  }
+
+  String e2 = btn2.update();
+  if (e2 != "") {
+    totalButtonPresses++;
+    if (!offlineMode) client.publish(client_pushbutton2, (char*)("btn2_"+e2).c_str());
+    evaluateRules("btn2_" + e2);
+  }
+
+  delay(10); 
 }
 
+void evaluateRules(String triggerEvent) {
+  for (int i = 0; i < MAX_RULES; i++) {
+    Rule r = smartHomeRules[i];
+    if (r.source == "none") continue;
+    bool conditionMet = false;
+    
+    bool isContinuousBtn = ((r.source == "btn1" || r.source == "btn2") && r.value == "raw");
 
-void onClientConnect(WiFiEvent_t event, WiFiEventInfo_t info) {
-  Serial.println("Client connected to AP!");
-  Serial.print("Browse to: ");
-  Serial.println(WiFi.softAPIP());
+    if (isContinuousBtn) {
+#ifdef pushbutton1Pin
+      if (r.source == "btn1") conditionMet = (digitalRead(pushbutton1Pin) == LOW);
+#endif
+#ifdef pushbutton2Pin
+      if (r.source == "btn2") conditionMet = (digitalRead(pushbutton2Pin) == LOW);
+#endif
+    } 
+    else if (r.source == "btn1" || r.source == "btn2" || r.source == "rfid") {
+      String expectedEvent = r.source + "_" + r.value;
+      if (triggerEvent == expectedEvent) conditionMet = true;
+    } 
+    else {
+      float currentVal = 0.0;
+      if (r.source == "temp") currentVal = lastTemp;
+      else if (r.source == "hum") currentVal = lastHum;
+      else if (r.source == "motion") {
+#ifdef motionPin
+        currentVal = digitalRead(motionPin); 
+#endif
+      }
+      else if (r.source == "touch") {
+#ifdef touchPin
+        currentVal = touchRead(touchPin);
+#endif
+      }
+      else if (r.source == "gas") {
+#ifdef gasPin
+        currentVal = digitalRead(gasPin);
+#endif
+      }
+      else if (r.source == "water") {
+#ifdef waterLevelPin
+        currentVal = analogRead(waterLevelPin);
+#endif
+      }
+      else if (r.source == "soil") {
+#ifdef soilHumidityPin
+        currentVal = analogRead(soilHumidityPin);
+#endif
+      }
 
-  mylcd.clear();
-  mylcd.setCursor(0, 0);
-  mylcd.print("Browse to:");
-  mylcd.setCursor(0, 1);
-  mylcd.print(WiFi.softAPIP().toString());
-}
+      float targetVal = r.value.toFloat();
+      if (r.op == ">") conditionMet = (currentVal > targetVal);
+      else if (r.op == "<") conditionMet = (currentVal < targetVal);
+      else if (r.op == "==") conditionMet = (currentVal == targetVal);
+    }
 
-// Starts webserver
-void webserver() {
-  const char* ssid_AP = "Config_ESP32";
-  const char* password_AP = "12345678";
-  static String readString;
-
-  Serial.println("Setting up Access Point...");
-
-  // Load stored values from Preferences
-  String storedSSID = preferences.getString("wifi_ssid", ssid);
-  storedSSID.toCharArray(ssid_config, 32);
-
-  String storedPASS = preferences.getString("wifi_pass", password);
-  storedPASS.toCharArray(pass_config, 32);
-
-  String storedMQTT = preferences.getString("mqtt_ip", mqtt_server);
-  storedMQTT.toCharArray(mqtt_server_config, 40);
-
-  int storedNeighborhood = preferences.getInt("neighborhood", 0);
-  int storedHome = preferences.getInt("home", 0);
-
-  // -----------------------------
-  // START ACCESS POINT
-  // -----------------------------
-  WiFi.mode(WIFI_AP);
-  WiFi.softAP(ssid_AP, password_AP);
-
-  // --- NEW: Display SSID + Password ---
-  Serial.println();
-  Serial.println("====== ACCESS POINT STARTED ======");
-  Serial.print("SSID: ");
-  Serial.println(ssid_AP);
-  Serial.print("Password: ");
-  Serial.println(password_AP);
-
-  // LCD
-  mylcd.clear();
-  mylcd.setCursor(0, 0);
-  mylcd.print("SSID:");
-  mylcd.print(ssid_AP);
-  mylcd.setCursor(0, 1);
-  mylcd.print("PASS:");
-  mylcd.print(password_AP);
-
-  // Get IP
-  IPAddress IP = WiFi.softAPIP();
-  Serial.print("AP IP address: ");
-  Serial.println(IP);
-
-
-  // -----------------------------
-  // START WEB SERVER (must be before server.available())
-  // -----------------------------
-  server.begin();
-  Serial.println("Web server started");
-
-  WiFi.onEvent(onClientConnect, ARDUINO_EVENT_WIFI_AP_STACONNECTED);
-
-
-  config = true;
-
-  // -----------------------------
-  // SERVE FOREVER until reset button used
-  // -----------------------------
-  while (true) {
-    WiFiClient client = server.available();
-    if (!client) continue;
-
-    readString = "";
-
-    while (client.connected()) {
-      if (client.available()) {
-        char c = client.read();
-        readString += c;
-
-        // End of HTTP request
-        if (c == '\n') {
-
-          // --------------------------
-          // SEND CONFIG HTML PAGE
-          // --------------------------
-          client.println("HTTP/1.1 200 OK");
-          client.println("Content-Type: text/html\n");
-          client.println("<html><head><title>Config</title>");
-          client.println("<style>");
-          client.println("body { font-size: 22px; font-family: Arial; }");  // <--- bigger text
-          client.println("input { font-size: 22px; padding: 5px; }");       // <--- bigger boxes
-          client.println("h2 { font-size: 28px; }");                        // <--- bigger header
-          client.println("</style>");
-          client.println("</head><body>");
-          client.println("<h2>Smart Home Configuration</h2>");
-          client.println("<form method='get' action='/'>");
-          client.println("Enter Neighborhood Number: "
-                         "<input type='number' name='neighborhood' value='"
-                         + String(storedNeighborhood) + "' min='0'>"
-                                                        "<br>");
-          client.println("Enter Home Number: "
-                         "<input type='number' name='home' value='"
-                         + String(storedHome) + "' min='0'>"
-                                                "<br>");
-          client.println("MQTT Broker IP: "
-                         "<input type='text' name='mqttip' value='"
-                         + String(storedMQTT) + "'>"
-                                                "<br>");
-          client.println("WiFi SSID: "
-                         "<input type='text' name='wifissid' value='"
-                         + String(ssid_config) + "'>"
-                                                 "<br>");
-          client.println("WiFi Password: "
-                         "<input type='text' name='wifipass' value='"
-                         + String(pass_config) + "'>"
-                                                 "<br><br>");
-          client.println("<input type='submit' name='reset' value='Finalize and Reset ESP32'>");
-          client.println("</form><br>");
-          client.println("<form method='get' action='/'>");
-          client.println("<input type='submit' name='default' value='Reset to Default Settings'>");
-          client.println("</form>");
-          client.println("</body></html>");
-
-          client.stop();
-
-          Serial.println(readString);
-
-          // --------------------------
-          // RESET TO DEFAULTS
-          // --------------------------
-          if (readString.indexOf("default=Reset+to+Default+Settings") > 0) {
-            preferences.putBool("reset", false);
-            reset = false;
-            return;  // return to main loop
-          }
-
-          // --------------------------
-          // FINALIZE AND RESET DEVICE
-          // --------------------------
-          if (readString.indexOf("reset=Finalize+and+Reset") > 0) {
-
-            auto getParam = [&](String key) {
-              if (readString.indexOf(key + "=") < 0) return String("");
-              String part = readString.substring(readString.indexOf(key + "=") + key.length() + 1);
-              if (part.indexOf("&") >= 0) part = part.substring(0, part.indexOf("&"));
-              if (part.indexOf(" ") >= 0) part = part.substring(0, part.indexOf(" "));
-              part.trim();
-              part.replace("+", " ");
-              return part;
-            };
-
-            String nVal = getParam("neighborhood");
-            String hVal = getParam("home");
-            String mqttVal = getParam("mqttip");
-            String ssidVal = getParam("wifissid");
-            String passVal = getParam("wifipass");
-
-            Serial.println("Parsed values:");
-            Serial.println(nVal);
-            Serial.println(hVal);
-            Serial.println(mqttVal);
-            Serial.println(ssidVal);
-            Serial.println(passVal);
-
-            // Save all updated config
-            preferences.putBool("reset", true);
-            preferences.putInt("neighborhood", nVal.toInt());
-            preferences.putInt("home", hVal.toInt());
-            preferences.putString("mqtt_ip", mqttVal);
-            preferences.putString("wifi_ssid", ssidVal);
-            preferences.putString("wifi_pass", passVal);
-
-            delay(300);
-            ESP.restart();
-          }
-
-          readString = "";
+    if (conditionMet) {
+      if (!isContinuousBtn && (r.source == "btn1" || r.source == "btn2" || r.source == "rfid")) {
+        executeAction(r);
+      } 
+      else {
+        bool isToggleAction = (r.action.indexOf("toggle") >= 0);
+        if (isToggleAction) {
+          if (!ruleLastState[i]) executeAction(r); 
+        } 
+        else if (r.action == "strip_flash") {
+          if (!ruleLastState[i]) executeAction(r); 
+        }
+        else {
+          executeAction(r);
         }
       }
+    } 
+    else if (ruleLastState[i] && (isContinuousBtn || (r.source != "btn1" && r.source != "btn2" && r.source != "rfid"))) {
+       if (r.action == "strip_momentary") stripOff();
+    }
+
+    if (isContinuousBtn || (r.source != "btn1" && r.source != "btn2" && r.source != "rfid")) {
+      ruleLastState[i] = conditionMet;
     }
   }
 }
 
-
-
-void setup_wifi() {
-  //client.setServer(mqtt_server, 1883);
-  String storedSSID = preferences.getString("wifi_ssid", ssid);
-storedSSID.toCharArray(ssid_config, 32);
-String storedPASS = preferences.getString("wifi_pass", password);
-storedPASS.toCharArray(pass_config, 32);
-String storedMQTT = preferences.getString("mqtt_ip", mqtt_server);
-storedMQTT.toCharArray(mqtt_server_config, 40);
-mqtt_server = mqtt_server_config;
-
-  homeNumber = preferences.getInt("home", 0);
-  Serial.println("hello");
-  delay(10);
-  mylcd.clear();
-  mylcd.setCursor(0, 0);
-  mylcd.print("/home" + String(homeNumber));
-  mylcd.setCursor(0, 1);
-  mylcd.print("SSID: ");
-  mylcd.print(String(wifi_ssid));
-  Serial.println();
-  Serial.print("Connecting to ");
-  Serial.println(wifi_ssid);
-  //WiFi.config(ip);
-  //WiFi.begin(ssid, password);
-  WiFi.begin(wifi_ssid, wifi_pass);
-
-  if (WiFi.status() != WL_CONNECTED) {
-    delay(1000);
-    mylcd.clear();
-    mylcd.setCursor(0, 0);
-    mylcd.print("Connecting");
-    mylcd.setCursor(0, 1);
-    while (WiFi.status() != WL_CONNECTED) {
-      delay(500);
-      mylcd.print(".");
+void applyCustomColors(Rule r) {
+#ifdef LEDStripPin
+  int colors[12] = {0};
+  int startIdx = 0;
+  for(int i=0; i<12; i++) {
+      int commaIdx = r.extra.indexOf(',', startIdx);
+      if (commaIdx == -1) commaIdx = r.extra.length();
+      colors[i] = r.extra.substring(startIdx, commaIdx).toInt();
+      startIdx = commaIdx + 1;
+  }
+  for (int i = 0; i < 4; i++) {
+    if (i < strip.numPixels()) {
+      strip.setPixelColor(i, strip.Color(colors[i*3], colors[i*3+1], colors[i*3+2]));
     }
   }
-  delay(1000);
-
-  mylcd.clear();
-  mylcd.setCursor(0, 0);
-  mylcd.print("Wifi Connected!");
-  mylcd.setCursor(0, 1);
-  mylcd.print(WiFi.localIP().toString().c_str());
-  Serial.println("");
-  Serial.println("WiFi connected");
-  Serial.println("IP address: ");
-  Serial.println(WiFi.localIP());
-
-  client.setServer(mqtt_server_config, 1883);
-  Serial.print("Using MQTT Broker: ");
-  Serial.println(mqtt_server_config);
-  client.setCallback(callback);
-  delay(1000);
+  strip.show();
+#endif
 }
 
-//This function reads subscritptions
-void callback(char* topic, byte* message, unsigned int length) {
-  Serial.println("Message arrived!!!");
+void stripOff() {
+#ifdef LEDStripPin
+  for (int i = 0; i < strip.numPixels(); i++) strip.setPixelColor(i, strip.Color(0, 0, 0));
+  strip.show();
+#endif
+}
 
-  // Serial.print(topic);
-  // Serial.print(": ");
-  String messageTemp;
-  for (int i = 0; i < length; i++) {
-    Serial.print((char)message[i]);
-    messageTemp += (char)message[i];
-  }
-  Serial.println();
-
-  if (messageTemp == "true" || messageTemp == "True" || messageTemp == "1") {
-    messageTemp = "1";
-  } else if (messageTemp == "false" || messageTemp == "False" || messageTemp == "0") {
-    messageTemp = "0";
-  }
-
-  // Motor
-  static Servo Dservo;
-  static Servo Wservo;
-
-  // Buzzer
+// WIP COMM HERE
+void executeAction(Rule r) {
   Buzzer buzz(buzzerPin);
-
-#ifdef SMARTHOME
-  if (String(topic) == control1) {
-    digitalWrite(LEDPin, messageTemp.toInt());
-  }
-  if (String(topic) == control2) {
-
-    Dservo.attach(doorServo);
-    if (messageTemp.toInt() == 1) Dservo.write(180);  //Open Door
-    else Dservo.write(0);                             //Close Door
-    delay(500);
-  }
-  if (String(topic) == control3) {
-    Wservo.attach(windowServo);
-    if (messageTemp.toInt() == 1) Wservo.write(165);  //Open Window
-    else Wservo.write(50);                            //Close Window
-    delay(500);
-  }
-  if (String(topic) == control4 && (messageTemp == "1")) {
-    //pinMode(buzzerPin, OUTPUT);
-    //pinMode(buzzerPin, INPUT_PULLUP);  //must turn off because of interferance with buzzer
-    buzz.sound(165, 100);
-  }
-  if (String(topic) == LEDcolorStrip) {
-    if (messageTemp.toInt() == 0) colorWipe(strip.Color(0, 0, 0), 50);        //LED strip off
-    if (messageTemp.toInt() == 1) colorWipe(strip.Color(255, 0, 0), 50);      //LED strip red on
-    if (messageTemp.toInt() == 2) colorWipe(strip.Color(200, 100, 0), 50);    //LED strip orange on
-    if (messageTemp.toInt() == 3) colorWipe(strip.Color(200, 200, 0), 50);    //LED strip yellow on
-    if (messageTemp.toInt() == 4) colorWipe(strip.Color(0, 255, 0), 50);      //LED strip green on
-    if (messageTemp.toInt() == 5) colorWipe(strip.Color(0, 100, 255), 50);    //LED strip cyan on
-    if (messageTemp.toInt() == 6) colorWipe(strip.Color(0, 0, 255), 50);      //LED strip blue on
-    if (messageTemp.toInt() == 7) colorWipe(strip.Color(100, 0, 255), 50);    //LED strip purple on
-    if (messageTemp.toInt() == 8) colorWipe(strip.Color(255, 255, 255), 50);  //LED strip white on
-    if (messageTemp.toInt() == 9) rainbow(10);                                //LED strip sfx1 on
-    if (messageTemp.toInt() == 10) theaterChaseRainbow(50);                   //LED sfx2 on
-
-    Serial.print(messageTemp.toInt());
-  }
-  if (String(topic) == control5) {
-    if (messageTemp.toFloat())
-      analogWrite(fanPin1, (messageTemp.toFloat()) * 130 + 125);
-    else
-      analogWrite(fanPin1, 0);
+  String action = r.action;
+  
+  if (action == "fan_toggle") {
+    fanIsOn = !fanIsOn;
+#ifdef fanPin1
+    analogWrite(fanPin1, fanIsOn ? 255 : 0);
     digitalWrite(fanPin2, LOW);
-  }
 #endif
-#ifdef SMARTFARM
-  if (String(topic) == control1) {
-    digitalWrite(LEDPin, messageTemp.toInt());
-  }
-  if (String(topic) == control2) {
-    Dservo.attach(doorServo);
-    if (messageTemp.toInt() == 1) Dservo.write(180);  //Open Door
-    else Dservo.write(80);                            //Close Door
-    delay(500);
-  }
-  if (String(topic) == control3) {
-    buzz.sound(165, 100);
-  }
-  if (String(topic) == control4) {
-    digitalWrite(relayPin, messageTemp.toInt());
-  }
-  if (String(topic) == control5) {
-    if (messageTemp.toFloat())
-      analogWrite(fanPin1, (messageTemp.toFloat()) * 130 + 125);
-    else
-      analogWrite(fanPin1, 0);
+  } 
+  else if (action == "fan_on") {
+    fanIsOn = true;
+#ifdef fanPin1
+    analogWrite(fanPin1, 255);
     digitalWrite(fanPin2, LOW);
+#endif
   }
+  else if (action == "fan_off") {
+    fanIsOn = false;
+#ifdef fanPin1
+    analogWrite(fanPin1, 0);
+    digitalWrite(fanPin2, LOW);
+#endif
+  }
+  else if (action == "led_toggle") {
+    ledIsOn = !ledIsOn;
+#ifdef LEDPin
+    digitalWrite(LEDPin, ledIsOn ? HIGH : LOW);
+#endif
+  }
+  else if (action == "door_toggle") {
+    doorIsOpen = !doorIsOpen;
+#ifdef doorServo
+    Dservo.write(doorIsOpen ? 180 : 0);
+#endif
+  }
+  else if (action == "door_open") {
+    doorIsOpen = true;
+#ifdef doorServo
+    Dservo.write(180);
+#endif
+  }
+  else if (action == "door_close") {
+    doorIsOpen = false;
+#ifdef doorServo
+    Dservo.write(0);
+#endif
+  }
+  else if (action == "window_toggle") {
+    windowIsOpen = !windowIsOpen;
+#ifdef windowServo
+    Wservo.write(windowIsOpen ? 165 : 50);
+#endif
+  }
+  else if (action == "window_open") {
+    windowIsOpen = true;
+#ifdef windowServo
+    Wservo.write(165);
+#endif
+  }
+  else if (action == "window_close") {
+    windowIsOpen = false;
+#ifdef windowServo
+    Wservo.write(50);
+#endif
+  }
+  else if (action == "buzzer_beep") {
+    buzz.sound(165, 200);
+  }
+  else if (action == "strip_toggle") {
+    stripIsOn = !stripIsOn;
+    if (stripIsOn) applyCustomColors(r);
+    else stripOff();
+  }
+  else if (action == "strip_momentary") {
+    stripIsOn = true;
+    applyCustomColors(r);
+  }
+  else if (action == "strip_flash") {
+    applyCustomColors(r);
+    delay(100);
+    stripOff();
+  }
+}
+
+void updateLCD() {
+  auto getDisplayString = [](int opt, int length) {
+    String s = "";
+    if (opt == 0) {
+      if (offlineMode) {
+        s = "Offline ";
+      } else {
+        s = String(bruh) + " ";
+      }
+      int d = value / 86400;
+      int h = (value % 86400) / 3600;
+      int m = (value % 3600) / 60;
+      int sec = value % 60;
+      char buf[20];
+      sprintf(buf, "%d:%02d:%02d:%02d", d, h, m, sec);
+      s += String(buf);
+    }
+    else if (opt == 1) s = String(lastTemp, 1) + "C";
+    else if (opt == 2) s = String(lastHum, 1) + "%";
+    else if (opt == 3) s = String(totalButtonPresses);
+    else if (opt == 4) s = String(value);
+    else if (opt == 5) s = "";
+    
+    while (s.length() < length) s += " ";
+    return s.substring(0, length);
+  };
+
+  mylcd.setCursor(0, 0); mylcd.print(getDisplayString(lcdTop, 16));
+  mylcd.setCursor(0, 1); mylcd.print(getDisplayString(lcdBL, 8));
+  mylcd.setCursor(8, 1); mylcd.print(getDisplayString(lcdBR, 8));
+}
+
+// WIP COMM HERE
+void webserver() {
+  static unsigned long lastLcdUpdate = 0;
+  if (millis() - lastLcdUpdate > 1000) {
+    lastLcdUpdate = millis();
+    
+    if (WiFi.softAPgetStationNum() > 0) {
+      mylcd.setCursor(0, 0); mylcd.print("Go to IP:       ");
+      mylcd.setCursor(0, 1); mylcd.print("192.168.4.1     ");
+    } else {
+      mylcd.setCursor(0, 0); 
+      mylcd.print((apNameStr.length() > 16) ? apNameStr.substring(0,16) : apNameStr);
+      while(apNameStr.length() < 16) { mylcd.print(" "); apNameStr += " "; }
+      
+      mylcd.setCursor(0, 1); 
+      String passStr = "PW:" + apPassStr;
+      mylcd.print(passStr);
+      while(passStr.length() < 16) { mylcd.print(" "); passStr += " "; }
+    }
+  }
+
+  WiFiClient webClient = server.available();
+  if (!webClient) return;
+
+  auto getParam = [](String key, const String& fullString) {
+    String match1 = "?" + key + "=";
+    String match2 = "&" + key + "=";
+    int idx = fullString.indexOf(match1);
+    if (idx < 0) idx = fullString.indexOf(match2);
+    if (idx < 0) return String("");
+    
+    int start = idx + key.length() + 2; 
+    int end = fullString.indexOf("&", start);
+    if (end < 0) end = fullString.indexOf(" ", start);
+    if (end < 0) end = fullString.length();
+    
+    String part = fullString.substring(start, end);
+    part.trim(); part.replace("+", " ");
+    return part;
+  };
+
+  String readString = "";
+  String currentLine = "";
+  
+  unsigned long clientTimeout = millis();
+
+  while (webClient.connected() && (millis() - clientTimeout < 2000)) {
+    if (webClient.available()) {
+      char c = webClient.read();
+      readString += c;
+      clientTimeout = millis(); 
+
+      if (c == '\n') {
+        if (currentLine.length() == 0) {
+          
+          if (readString.indexOf("GET /rules") >= 0) {
+            int editId = 0;
+            if (readString.indexOf("id=") >= 0) {
+              editId = getParam("id", readString).toInt();
+            }
+            if (editId < 0) editId = 0;
+            if (editId >= MAX_RULES) editId = MAX_RULES - 1;
+
+            webClient.println("HTTP/1.1 200 OK");
+            webClient.println("Content-Type: text/html");
+            webClient.println("Connection: close");
+            webClient.println();
+            
+            webClient.println("<html><head><style>body{font-size:18px; font-family:Arial;} select,input,button{font-size:16px; padding:4px; margin-bottom:8px;} .box{background:#f4f4f4; padding:10px; border-radius:8px;}</style>");
+            
+            webClient.println("<script>");
+            webClient.println("function updateUI() {");
+            webClient.println("  var src = document.getElementById('srcSelect').value;");
+            webClient.println("  var op = document.getElementById('opSelect');");
+            webClient.println("  var opC = document.getElementById('opContainer');");
+            webClient.println("  var vIn = document.getElementById('valInput');");
+            webClient.println("  var vBtn = document.getElementById('valSelBtn');");
+            webClient.println("  var vBool = document.getElementById('valSelBool');");
+            webClient.println("  var pBtn = document.getElementById('pairBtn');");
+            
+            webClient.println("  vIn.style.display = 'none'; vIn.disabled = true;");
+            webClient.println("  vBtn.style.display = 'none'; vBtn.disabled = true;");
+            webClient.println("  vBool.style.display = 'none'; vBool.disabled = true;");
+            webClient.println("  pBtn.style.display = 'none';");
+            
+            webClient.println("  if(src === 'btn1' || src === 'btn2') {");
+            webClient.println("    opC.style.display = 'none';");
+            webClient.println("    vBtn.style.display = 'inline-block'; vBtn.disabled = false;");
+            webClient.println("  } else if(src === 'rfid') {");
+            webClient.println("    opC.style.display = 'none';");
+            webClient.println("    vIn.style.display = 'inline-block'; vIn.disabled = false; vIn.type = 'text';");
+            webClient.println("    pBtn.style.display = 'inline-block';");
+            webClient.println("  } else if(src === 'motion' || src === 'gas') {");
+            webClient.println("    opC.style.display = 'inline-block';");
+            webClient.println("    if(op.value !== '==') op.value = '==';");
+            webClient.println("    vBool.style.display = 'inline-block'; vBool.disabled = false;");
+            webClient.println("  } else {");
+            webClient.println("    opC.style.display = 'inline-block';");
+            webClient.println("    vIn.style.display = 'inline-block'; vIn.disabled = false; vIn.type = 'number'; vIn.step = 'any';");
+            webClient.println("  }");
+            webClient.println("  updateActionUI();");
+            webClient.println("}");
+            webClient.println("function updateActionUI() {");
+            webClient.println("  var act = document.getElementById('actSelect').value;");
+            webClient.println("  var ledDiv = document.getElementById('ledConfig');");
+            webClient.println("  if(act.indexOf('strip_') === 0) {");
+            webClient.println("    ledDiv.style.display = 'block';");
+            webClient.println("  } else {");
+            webClient.println("    ledDiv.style.display = 'none';");
+            webClient.println("  }");
+            webClient.println("}");
+            webClient.println("window.onload = updateUI;");
+            webClient.println("</script></head><body>");
+            
+            webClient.println("<h2>Rule Sandbox Configuration</h2>");
+
+            webClient.println("<form method='get' action='/rules'>");
+            webClient.println("Select Rule to Edit: <select name='id' onchange='this.form.submit()'>");
+            
+            int firstEmpty = -1;
+            for(int i=0; i<MAX_RULES; i++){
+              if(smartHomeRules[i].source != "none") {
+                webClient.print("<option value='"); webClient.print(i); webClient.print("'");
+                if(i == editId) webClient.print(" selected");
+                webClient.print(">Rule "); webClient.print(i+1); webClient.println("</option>");
+              } else if (firstEmpty == -1) {
+                firstEmpty = i;
+              }
+            }
+            
+            if (firstEmpty != -1 && smartHomeRules[editId].source == "none") {
+              webClient.print("<option value='"); webClient.print(editId); webClient.print("' selected");
+              webClient.print(">+ New Rule (Slot "); webClient.print(editId+1); webClient.println(")</option>");
+            } else if (firstEmpty != -1) {
+              webClient.print("<option value='"); webClient.print(firstEmpty); 
+              webClient.println("'>+ Add New Rule</option>");
+            }
+
+            webClient.println("</select></form><hr>");
+
+            webClient.println("<form method='get' action='/saverule' class='box'>");
+            webClient.print("<input type='hidden' name='id' value='"); webClient.print(editId); webClient.println("'>");
+            
+            auto printOption = [&](String val, String label, String savedVal) {
+              webClient.print("<option value='"); webClient.print(val); webClient.print("'");
+              if (savedVal == val) webClient.print(" selected");
+              webClient.print(">"); webClient.print(label); webClient.println("</option>");
+            };
+
+            webClient.print("<b>Editing Rule "); webClient.print(editId+1); webClient.println("</b><br><br>");
+            
+            webClient.print("IF Source: <select id='srcSelect' name='src' onchange='updateUI()'>");
+            printOption("none", "None", smartHomeRules[editId].source);
+            printOption("btn1", "Button 1", smartHomeRules[editId].source);
+            printOption("btn2", "Button 2", smartHomeRules[editId].source);
+            printOption("rfid", "RFID Tag UID", smartHomeRules[editId].source);
+            printOption("temp", "Temperature", smartHomeRules[editId].source);
+            printOption("hum", "Humidity", smartHomeRules[editId].source);
+            printOption("touch", "Touch Sensor", smartHomeRules[editId].source);
+            printOption("motion", "Motion Sensor", smartHomeRules[editId].source);
+            printOption("gas", "Gas Sensor", smartHomeRules[editId].source);
+            printOption("water", "Water Level", smartHomeRules[editId].source);
+            printOption("soil", "Soil Humidity", smartHomeRules[editId].source);
+            webClient.println("</select><br>");
+            
+            webClient.print("<span id='opContainer'>Operator: <select id='opSelect' name='op'>");
+            printOption("==", "Is (==)", smartHomeRules[editId].op);
+            printOption(">", "Greater (>)", smartHomeRules[editId].op);
+            printOption("<", "Less (<)", smartHomeRules[editId].op);
+            webClient.println("</select><br></span>");
+
+            String curVal = smartHomeRules[editId].value;
+            webClient.print("Value: ");
+            
+            webClient.print("<input type='text' id='valInput' name='val' value='"); 
+            webClient.print(curVal);
+            webClient.print("' placeholder='...'>");
+
+            webClient.print("<a href='/pairrfid?id=");
+            webClient.print(editId);
+            webClient.println("' id='pairBtn' style='display:none; background:#2196F3; color:white; padding:5px 10px; text-decoration:none; border-radius:4px; margin-left:10px; font-size:16px;'>Pair FOB</a>");
+
+            webClient.print("<select id='valSelBtn' name='val' style='display:none;'>");
+            printOption("tap", "Single Tap", curVal);
+            printOption("double", "Double Tap", curVal);
+            printOption("hold", "Hold", curVal);
+            printOption("raw", "Direct Press (While Holding)", curVal);
+            webClient.println("</select>");
+
+            webClient.print("<select id='valSelBool' name='val' style='display:none;'>");
+            printOption("1", "True / Detected (1)", curVal);
+            printOption("0", "False / Clear (0)", curVal);
+            webClient.println("</select><br>");
+
+            webClient.print("THEN Action: <select id='actSelect' name='a' onchange='updateActionUI()'>");
+            printOption("none", "None", smartHomeRules[editId].action);
+            printOption("fan_toggle", "Toggle Fan", smartHomeRules[editId].action);
+            printOption("fan_on", "Turn Fan ON", smartHomeRules[editId].action);
+            printOption("fan_off", "Turn Fan OFF", smartHomeRules[editId].action);
+            printOption("led_toggle", "Toggle LED", smartHomeRules[editId].action);
+            printOption("door_toggle", "Toggle Door", smartHomeRules[editId].action);
+            printOption("door_open", "Open Door", smartHomeRules[editId].action);
+            printOption("door_close", "Close Door", smartHomeRules[editId].action);
+            printOption("window_toggle", "Toggle Window", smartHomeRules[editId].action);
+            printOption("window_open", "Open Window", smartHomeRules[editId].action);
+            printOption("window_close", "Close Window", smartHomeRules[editId].action);
+            printOption("buzzer_beep", "Beep Buzzer", smartHomeRules[editId].action);
+            printOption("strip_toggle", "Toggle Custom LED Strip", smartHomeRules[editId].action);
+            printOption("strip_momentary", "Custom LED Strip (Momentary/While Active)", smartHomeRules[editId].action);
+            printOption("strip_flash", "Flash Custom LED Strip", smartHomeRules[editId].action);
+            webClient.println("</select><br>");
+
+            // Dynamic LED Config Block
+            webClient.println("<div id='ledConfig' style='display:none; margin-top:10px; padding:10px; background:#ddd; border-radius:5px;'>");
+            webClient.println("<b>Custom LED Strip Colors (0-255)</b><br>");
+            
+            int c[12] = {0};
+            String curExt = smartHomeRules[editId].extra;
+            if (curExt.length() > 0) {
+                int startIdx = 0;
+                for(int i=0; i<12; i++) {
+                    int commaIdx = curExt.indexOf(',', startIdx);
+                    if (commaIdx == -1) commaIdx = curExt.length();
+                    c[i] = curExt.substring(startIdx, commaIdx).toInt();
+                    startIdx = commaIdx + 1;
+                }
+            }
+            
+            for(int i=1; i<=4; i++) {
+               webClient.print("LED "); webClient.print(i); webClient.print(": ");
+               webClient.print("R <input type='number' name='r"); webClient.print(i); webClient.print("' value='"); webClient.print(c[(i-1)*3]); webClient.print("' min='0' max='255' style='width:60px;'> ");
+               webClient.print("G <input type='number' name='g"); webClient.print(i); webClient.print("' value='"); webClient.print(c[(i-1)*3+1]); webClient.print("' min='0' max='255' style='width:60px;'> ");
+               webClient.print("B <input type='number' name='b"); webClient.print(i); webClient.print("' value='"); webClient.print(c[(i-1)*3+2]); webClient.print("' min='0' max='255' style='width:60px;'><br>");
+            }
+            webClient.println("</div><br>");
+
+            webClient.println("<button type='submit' name='act' value='save' style='background:#4CAF50; color:white; border:none;'>Save Rule</button> ");
+            webClient.println("<button type='submit' name='act' value='del' style='background:#f44336; color:white; border:none;'>Delete Rule</button>");
+            webClient.println("</form>");
+            
+            webClient.println("<br><form method='get' action='/'><input type='submit' value='Back to Network Config'></form>");
+            webClient.println("</body></html>");
+          } 
+          else if (readString.indexOf("GET /pairrfid") >= 0) {
+            int idx = getParam("id", readString).toInt();
+            if (idx < 0) idx = 0;
+            if (idx >= MAX_RULES) idx = MAX_RULES - 1;
+
+            mylcd.clear();
+            mylcd.setCursor(0, 0); mylcd.print("TAP FOB NOW");
+            mylcd.setCursor(0, 1); mylcd.print("Waiting 10s...");
+            
+            String scannedUID = "";
+            unsigned long startWait = millis();
+            
+            while(millis() - startWait < 10000) {
+#ifdef RFID
+              scannedUID = rfid();
+              if(scannedUID != "") break;
+#endif
+              delay(50);
+            }
+            
+            if(scannedUID != "") {
+              mylcd.clear();
+              mylcd.setCursor(0, 0); mylcd.print("SUCCESS!");
+              mylcd.setCursor(0, 1); mylcd.print(scannedUID);
+              smartHomeRules[idx].value = scannedUID; 
+              delay(1500);
+            } else {
+              mylcd.clear();
+              mylcd.setCursor(0, 0); mylcd.print("TIMEOUT");
+              delay(1500);
+            }
+
+            webClient.println("HTTP/1.1 302 Found");
+            webClient.print("Location: /rules?id=");
+            webClient.println(idx);
+            webClient.println("Connection: close");
+            webClient.println();
+          }
+          else if (readString.indexOf("GET /saverule") >= 0) {
+            int idx = getParam("id", readString).toInt();
+            String act = getParam("act", readString);
+            
+            if (idx >= 0 && idx < MAX_RULES) {
+              if (act == "del") {
+                smartHomeRules[idx].source = "none";
+                smartHomeRules[idx].op = "==";
+                smartHomeRules[idx].value = "";
+                smartHomeRules[idx].action = "none";
+                smartHomeRules[idx].extra = "";
+              } else {
+                String s = getParam("src", readString);
+                String o = getParam("op", readString);
+                String v = getParam("val", readString);
+                String a = getParam("a", readString);
+                
+                if (s == "btn1" || s == "btn2" || s == "rfid") {
+                  o = "=="; 
+                } 
+                else if (s == "motion" || s == "gas") {
+                  o = "=="; 
+                  if (v != "0" && v != "1") v = "1"; 
+                } 
+                else if (s != "none") {
+                  float checkNum = v.toFloat();
+                  if (checkNum == 0.0 && v != "0" && v != "0.0") v = "0"; 
+                }
+
+                if (a.indexOf("strip_") == 0) {
+                  String ext = "";
+                  auto clamp = [](String val) {
+                    if (val == "") return 0;
+                    int v = val.toInt();
+                    if (v < 0) return 0;
+                    if (v > 255) return 255;
+                    return v;
+                  };
+                  for (int j = 1; j <= 4; j++) {
+                    ext += String(clamp(getParam("r" + String(j), readString))) + ",";
+                    ext += String(clamp(getParam("g" + String(j), readString))) + ",";
+                    ext += String(clamp(getParam("b" + String(j), readString))) + (j == 4 ? "" : ",");
+                  }
+                  smartHomeRules[idx].extra = ext;
+                } else {
+                  smartHomeRules[idx].extra = "";
+                }
+
+                smartHomeRules[idx].source = s;
+                smartHomeRules[idx].op = o;
+                smartHomeRules[idx].value = v;
+                smartHomeRules[idx].action = a;
+              }
+              
+              preferences.putString(("src" + String(idx)).c_str(), smartHomeRules[idx].source);
+              preferences.putString(("op" + String(idx)).c_str(), smartHomeRules[idx].op);
+              preferences.putString(("val" + String(idx)).c_str(), smartHomeRules[idx].value);
+              preferences.putString(("a" + String(idx)).c_str(), smartHomeRules[idx].action);
+              preferences.putString(("ext" + String(idx)).c_str(), smartHomeRules[idx].extra);
+            }
+            
+            webClient.println("HTTP/1.1 302 Found");
+            webClient.print("Location: /rules?id=");
+            webClient.println(idx);
+            webClient.println("Connection: close");
+            webClient.println();
+          } 
+          else if (readString.indexOf("GET /exit") >= 0) {
+             webClient.println("HTTP/1.1 200 OK");
+             webClient.println("Content-Type: text/html");
+             webClient.println("Connection: close");
+             webClient.println();
+             
+             webClient.println("<html><body><h2>Rebooting...</h2></body></html>");
+             delay(1000); ESP.restart();
+          }
+          else {
+            int storedNeighborhood = preferences.getInt("neighborhood", 1);
+            int storedHome = preferences.getInt("home", 1);
+            String storedMQTT = preferences.getString("mqtt_ip", mqtt_server);
+
+            webClient.println("HTTP/1.1 200 OK");
+            webClient.println("Content-Type: text/html");
+            webClient.println("Connection: close");
+            webClient.println();
+
+            webClient.println("<html><head><title>Config</title><style>body{font-size:22px; font-family:Arial;} input,button{font-size:22px; padding:5px; margin:5px 0;} h2{font-size:28px;}</style></head><body>");
+            webClient.println("<h2>Smart Home Network Configuration</h2>");
+            webClient.println("<form method='get' action='/'>");
+            webClient.println("Neighborhood (1-100): <input type='number' name='neighborhood' value='" + String(storedNeighborhood) + "' min='1' max='100'><br>");
+            webClient.println("Home Number (1-100): <input type='number' name='home' value='" + String(storedHome) + "' min='1' max='100'><br>");
+            webClient.println("MQTT IP: <input type='text' name='mqttip' value='" + String(storedMQTT) + "'><br>");
+            webClient.println("WiFi SSID: <input type='text' name='wifissid' value='" + String(ssid_config) + "'><br>");
+            webClient.println("WiFi Pass: <input type='text' name='wifipass' value='" + String(pass_config) + "'><br><br>");
+            webClient.println("<input type='submit' name='reset' value='Finalize and Reset ESP32' style='background:#4CAF50; color:white; border:none; cursor:pointer;'>");
+            webClient.println("</form><br>");
+            webClient.println("<form method='get' action='/'><input type='submit' name='default' value='Reset to Defaults'></form><br><hr><br>");
+            webClient.println("<a href='/rules'><button type='button'>Go to Sandbox / Rules Config</button></a>");
+            webClient.println("</body></html>");
+          }
+          break; 
+        } else {
+          currentLine = "";
+        }
+      } else if (c != '\r') {
+        currentLine += c;
+      }
+    } else {
+      delay(1); 
+    }
+  }
+  webClient.stop();
+  
+  if (readString.indexOf("default=Reset+to+Defaults") > 0) {
+    preferences.putBool("reset", false); reset = false; return;  
+  }
+  if (readString.indexOf("reset=Finalize+and+Reset") > 0) {
+    int nh = getParam("neighborhood", readString).toInt();
+    int hm = getParam("home", readString).toInt();
+    if(nh < 1) nh = 1; if(nh > 100) nh = 100;
+    if(hm < 1) hm = 1; if(hm > 100) hm = 100;
+
+    preferences.putBool("reset", true);
+    preferences.putInt("neighborhood", nh);
+    preferences.putInt("home", hm);
+    preferences.putString("mqtt_ip", getParam("mqttip", readString));
+    preferences.putString("wifi_ssid", getParam("wifissid", readString));
+    preferences.putString("wifi_pass", getParam("wifipass", readString));
+    delay(300); ESP.restart();
+  }
+}
+
+// WIP COMM HERE
+bool connectWiFi(int timeoutSec) {
+  WiFi.begin(wifi_ssid, wifi_pass);
+  int attempts = timeoutSec * 2; 
+  while (WiFi.status() != WL_CONNECTED && attempts > 0) { delay(500); attempts--; }
+  return WiFi.status() == WL_CONNECTED;
+}
+
+void handleWiFiFailure() {
+#if defined(pushbutton1Pin) && defined(pushbutton2Pin)
+  while (true) {
+    mylcd.clear();
+    mylcd.setCursor(0, 0); mylcd.print("1:Offln 2:Retry");
+    mylcd.setCursor(0, 1); mylcd.print("Choose option...");
+
+    while (true) {
+      if (digitalRead(pushbutton1Pin) == LOW) {
+        delay(200); 
+        offlineMode = true;
+        WiFi.disconnect(true);
+        WiFi.mode(WIFI_OFF);
+        mylcd.clear();
+        mylcd.setCursor(0, 0); mylcd.print("Offline Mode");
+        mylcd.setCursor(0, 1); mylcd.print("Rules Only");
+        delay(2000);
+        return;
+      }
+      if (digitalRead(pushbutton2Pin) == LOW) {
+        delay(200); 
+        mylcd.clear();
+        mylcd.setCursor(0, 0); mylcd.print("Retrying 30s...");
+        if (connectWiFi(30)) return; 
+        break; 
+      }
+      delay(50);
+    }
+  }
+#else
+  offlineMode = true; WiFi.disconnect(true); WiFi.mode(WIFI_OFF);
 #endif
 }
 
-void reconnect() {
-  while (!client.connected()) {                     // Loop until reconnected
-    Serial.print("Attempting MQTT connection...");  // Attempt to connect
-    mylcd.clear();
-    mylcd.setCursor(0, 0);
-    mylcd.print("Attempting MQTT");
-    mylcd.setCursor(0, 1);
-    mylcd.print("connection...");
-    if (client.connect(("home" + String(homeNumber)).c_str())) {  //Client Name must be unique for every device in the network
-      Serial.println("connected");
-      // Subscribe
-      client.publish(client_message, "Reconnected!");
-      client.subscribe(client_subscribe_all);  //read all /out/#
-      mylcd.clear();
-      mylcd.setCursor(0, 0);
-      mylcd.print("MQTT Connected");
-      mylcd.setCursor(0, 1);
-      mylcd.print("W/");
-      //mylcd.print(String(mqtt_server));
-      mylcd.print(String(mqtt_server_config));
-    } else {
-      Serial.print("failed, rc=");
-      Serial.print(client.state());
-      Serial.println(" try again in 5 seconds");  // Wait 5 seconds before retrying
-      mylcd.clear();
-      mylcd.setCursor(0, 0);
-      mylcd.print("MQTT");
-      mylcd.setCursor(0, 1);
-      mylcd.print("Failed! Retrying...");
-      delay(10000);
-    }
+void reconnect() { if (client.connect(("home" + String(homeNumber)).c_str())) client.subscribe(client_subscribe_all); }
+void onClientConnect(WiFiEvent_t event, WiFiEventInfo_t info) { }
+void count() { value++; if (!offlineMode) client.publish(client_count, String(value).c_str()); }
+
+void callback(char* topic, byte* message, unsigned int length) {
+  String messageTemp;
+  for (int i = 0; i < length; i++) messageTemp += (char)message[i];
+  if (messageTemp == "true" || messageTemp == "1") messageTemp = "1";
+  else if (messageTemp == "false" || messageTemp == "0") messageTemp = "0";
+
+  Buzzer buzz(buzzerPin);
+#ifdef SMARTHOME
+  if (String(topic) == control1) { digitalWrite(LEDPin, messageTemp.toInt()); ledIsOn = messageTemp.toInt(); }
+  if (String(topic) == control2) {
+#ifdef doorServo    
+    Dservo.write(messageTemp.toInt() == 1 ? 180 : 0); doorIsOpen = (messageTemp.toInt() == 1);
+#endif    
   }
+  if (String(topic) == control3) {
+#ifdef windowServo    
+    Wservo.write(messageTemp.toInt() == 1 ? 165 : 50); windowIsOpen = (messageTemp.toInt() == 1);
+#endif    
+  }
+  if (String(topic) == control4 && (messageTemp == "1")) { buzz.sound(165, 100); }
+  if (String(topic) == LEDcolorStrip) {
+#ifdef LEDStripPin
+    if (messageTemp.toInt() == 0) { stripOff(); }
+    else if (messageTemp.toInt() == 1) {
+      for (int i = 0; i < strip.numPixels(); i++) strip.setPixelColor(i, strip.Color(255, 0, 0));
+      strip.show();
+    }
+    else if (messageTemp.toInt() == 4) {
+      for (int i = 0; i < strip.numPixels(); i++) strip.setPixelColor(i, strip.Color(0, 255, 0));
+      strip.show();
+    }
+    else if (messageTemp.toInt() == 6) {
+      for (int i = 0; i < strip.numPixels(); i++) strip.setPixelColor(i, strip.Color(0, 0, 255));
+      strip.show();
+    }
+#endif
+  }
+  if (String(topic) == control5) {
+#ifdef fanPin1    
+    analogWrite(fanPin1, messageTemp.toFloat() ? ((messageTemp.toFloat()) * 130 + 125) : 0);
+    digitalWrite(fanPin2, LOW); fanIsOn = (messageTemp.toFloat() > 0);
+#endif    
+  }
+#endif
 }
 
 #ifdef LEDStripPin
 void colorWipe(uint32_t color, int wait) {
-  for (int i = 0; i < strip.numPixels(); i++) {  // For each pixel in strip...
-    strip.setPixelColor(i, color);               //  Set pixel's color (in RAM)
-    strip.show();                                //  Update strip to match
-    delay(wait);                                 //  Pause for a moment
-  }
+  for (int i = 0; i < strip.numPixels(); i++) { strip.setPixelColor(i, color); strip.show(); delay(wait); }
 }
-
-// Rainbow cycle along whole strip. Pass delay time (in ms) between frames.
-void rainbow(int wait) {
-  for (long firstPixelHue = 0; firstPixelHue < 5 * 65536; firstPixelHue += 256) {
-    for (int i = 0; i < strip.numPixels(); i++) {  // For each pixel in strip...
-      int pixelHue = firstPixelHue + (i * 65536L / strip.numPixels());
-      strip.setPixelColor(i, strip.gamma32(strip.ColorHSV(pixelHue)));
-    }
-    strip.show();  // Update strip with new contents
-    delay(wait);   // Pause for a moment
-  }
-}
-
-// Rainbow-enhanced theater marquee. Pass delay time (in ms) between frames.
-void theaterChaseRainbow(int wait) {
-  int firstPixelHue = 0;           // First pixel starts at red (hue 0)
-  for (int a = 0; a < 30; a++) {   // Repeat 30 times...
-    for (int b = 0; b < 3; b++) {  //  'b' counts from 0 to 2...
-      strip.clear();               //   Set all pixels in RAM to 0 (off)
-                                   // 'c' counts up from 'b' to end of strip in increments of 3...
-      for (int c = b; c < strip.numPixels(); c += 3) {
-        int hue = firstPixelHue + c * 65536L / strip.numPixels();
-        uint32_t color = strip.gamma32(strip.ColorHSV(hue));  // hue -> RGB
-        strip.setPixelColor(c, color);                        // Set pixel 'c' to value 'color'
-      }
-      strip.show();                 // Update strip with new contents
-      delay(wait);                  // Pause for a moment
-      firstPixelHue += 65536 / 90;  // One cycle of color wheel over 90 frames
-    }
-  }
-}
+void rainbow(int wait) {}
 #endif
-
-void count() {
-  value = value + 1;
-  message = value;
-  client.publish(client_count, (char*)message.c_str());
-  mylcd.setCursor(9, 0);
-  //mylcd.print("Count: ");
-  mylcd.print(message);  //Display Count
-  Serial.print(client_count);
-  Serial.print(": ");
-  Serial.println(message);
-}
 
 #ifdef dht11PIN
 void temperature_humidity() {
-
-  static float humidity = 0;
-  static float oldHumidity = -1;
-  static float temperature = 0;
-  static float oldTemperature = -1;
-
-  if (xht.receive(dht)) {                  //Returns true when checked correctly
-                                           //temperature = dht[2];  //The integral part of temperature, DHT [3] is the fractional part
-    temperature = dht[2] + dht[3] / 10.0;  //The integral part of temperature, DHT [3] is the fractional part
-    if (temperature != oldTemperature) {
-      Serial.print("Temp:");
-      Serial.print(temperature);
-      Serial.println("C");
-      mylcd.setCursor(0, 1);
-      mylcd.print(temperature, 1);
-      mylcd.print((char)223);
-      mylcd.print("C ");
-      message = String(temperature);
-      client.publish(client_temperature, (char*)message.c_str());
-      oldTemperature = temperature;
+  if (xht.receive(dht)) {                  
+    lastTemp = dht[2] + dht[3] / 10.0; lastHum = dht[0] + dht[1] / 10.0;  
+    if (!offlineMode) {
+      client.publish(client_temperature, String(lastTemp).c_str());
+      client.publish(client_humidity, String(lastHum).c_str());
     }
-    //humidity = dht[0];  //The integral part of Humidity, DHT [1] is the fractional part
-    humidity = dht[0] + dht[1] / 10.0;  //The integral part of Humidity, DHT [1] is the fractional part
-    if (humidity != oldHumidity) {
-      Serial.print("Humidity:");
-      Serial.print(humidity);
-      Serial.println("%");
-      mylcd.setCursor(8, 1);
-      mylcd.print(humidity, 1);
-      mylcd.print("% ");
-      message = String(humidity);
-      client.publish(client_humidity, (char*)message.c_str());
-      oldHumidity = humidity;
-    }
-  } else {  //Read error
-    Serial.println("sensor error");
   }
 }
 #endif
 
 #ifdef motionPin
 void motion() {
-  static bool motionOld = 1;
-  static bool motionNew = 0;
-  motionNew = digitalRead(motionPin);
-  if (motionOld != motionNew) {
-    message = String(motionNew);
-    client.publish(client_motion, (char*)message.c_str());
-    Serial.print(client_motion);
-    Serial.print(": ");
-    Serial.println(message);
-    motionOld = motionNew;
-  }
+  static bool motionOld = 1; bool motionNew = digitalRead(motionPin);
+  if (motionOld != motionNew) { if (!offlineMode) client.publish(client_motion, String(motionNew).c_str()); motionOld = motionNew; }
 }
 #endif
 
 #ifdef gasPin
 void gas() {
-  static bool gasOld = 0;
-  static bool gasNew = 1;
-  gasNew = digitalRead(gasPin);
-  if (gasOld != gasNew) {
-    message = String(gasNew);
-    client.publish(client_gas, (char*)message.c_str());
-    Serial.print(client_gas);
-    Serial.print(": ");
-    Serial.println(message);
-    gasOld = gasNew;
-  }
+  static bool gasOld = 0; bool gasNew = digitalRead(gasPin);
+  if (gasOld != gasNew) { if (!offlineMode) client.publish(client_gas, String(gasNew).c_str()); gasOld = gasNew; }
 }
-#endif
-
-#ifdef pushbutton1Pin
-void pushbuttons() {
-  static bool pushbutton1Old = 0;
-  static bool pushbutton1New = 1;
-  static unsigned long lastTime1 = 0;
-
-  pushbutton1New = digitalRead(pushbutton1Pin);
-  
-  if (pushbutton1Old != pushbutton1New && (millis() - lastTime1) > 300) {
-    message = String(pushbutton1New);
-    client.publish(client_pushbutton1, (char*)message.c_str());
-    Serial.print(client_pushbutton1);
-    Serial.print(" ");
-    Serial.println(message);
-    
-    pushbutton1Old = pushbutton1New;
-    lastTime1 = millis();
-  }
-
-#ifdef pushbutton2Pin
-  static bool pushbutton2Old = 0;
-  static bool pushbutton2New = 1;
-  static unsigned long lastTime2 = 0;
-
-  pushbutton2New = digitalRead(pushbutton2Pin);
-  
-  if (pushbutton2Old != pushbutton2New && (millis() - lastTime2) > 300) {
-    message = String(pushbutton2New);
-    client.publish(client_pushbutton2, (char*)message.c_str());
-    Serial.print(client_pushbutton2);
-    Serial.print(" ");
-    Serial.println(message);
-    
-    pushbutton2Old = pushbutton2New;
-    lastTime2 = millis();
-  }
-#endif
-}
-
 #endif
 
 #ifdef touchPin
 void touch() {
-  static int touchOld = -1;
-  static int touchNew = 0;
-  touchNew = touchRead(touchPin);
-  if (touchOld != touchNew) {
-    message = String(touchNew);
-    client.publish(client_touch, (char*)message.c_str());
-    Serial.print(client_touch);
-    Serial.print(": ");
-    Serial.println(message);
-    touchOld = touchNew;
-  }
-}
-#endif
-
-#ifdef RFID
-String rfid() {
-  //message = " ";
-  //client.publish(client_rfid, (char*)message.c_str());
-  if (!mfrc522.PICC_IsNewCardPresent() || !mfrc522.PICC_ReadCardSerial()) {
-    return "";
-  }
-
-  // Save the UID
-  storedUID = mfrc522.uid;
-
-  // Clear the previous UID value
-  message = "";
-
-  // Construct UID value as a string
-  for (byte i = 0; i < storedUID.size; ++i) {
-    message += (storedUID.uidByte[i] < 0x10 ? "0" : "");
-    message += String(storedUID.uidByte[i], HEX);
-  }
-
-  // Convert the entire string to uppercase
-  message.toUpperCase();
-
-  //publish to MQTT
-  client.publish(client_rfid, (char*)message.c_str());
-
-  // Print UID to Serial
-  Serial.print(F("UID Value: "));
-  Serial.println(message);
-  return message;
+  static int touchOld = -1; int touchNew = touchRead(touchPin);
+  if (touchOld != touchNew) { if (!offlineMode) client.publish(client_touch, String(touchNew).c_str()); touchOld = touchNew; }
 }
 #endif
 
 #ifdef waterLevelPin
 void waterLevel() {
-  static int waterLevelOld = -1;
-  static int waterLevelNew = 0;
-  waterLevelNew = analogRead(waterLevelPin);
-  if (waterLevelNew != waterLevelOld) {
-    message = String(waterLevelNew);
-    client.publish(client_water, (char*)message.c_str());
-    Serial.print(client_touch);
-    Serial.print(": ");
-    Serial.println(message);
-    waterLevelOld = waterLevelNew;
-  }
+  static int waterLevelOld = -100; int waterLevelNew = analogRead(waterLevelPin);
+  if (abs(waterLevelNew - waterLevelOld) > 50) { if (!offlineMode) client.publish(client_water, String(waterLevelNew).c_str()); waterLevelOld = waterLevelNew; }
 }
 #endif
+
 #ifdef soilHumidityPin
 void soilHumidity() {
-  static int waterLevelOld = -1;
-  static int waterLevelNew = 0;
-  waterLevelNew = analogRead(soilHumidityPin);
-  if (waterLevelNew != waterLevelOld) {
-    message = String(waterLevelNew);
-    client.publish(client_soil, (char*)message.c_str());
-    Serial.print(client_touch);
-    Serial.print(": ");
-    Serial.println(message);
-    waterLevelOld = waterLevelNew;
-  }
+  static int soilLevelOld = -100; int soilLevelNew = analogRead(soilHumidityPin);
+  if (abs(soilLevelNew - soilLevelOld) > 50) { if (!offlineMode) client.publish(client_soil, String(soilLevelNew).c_str()); soilLevelOld = soilLevelNew; }
+}
+#endif
+
+#ifdef RFID
+String rfid() {
+  if (!mfrc522.PICC_IsNewCardPresent() || !mfrc522.PICC_ReadCardSerial()) return "";
+  storedUID = mfrc522.uid; String rfidMsg = "";
+  for (byte i = 0; i < storedUID.size; ++i) { rfidMsg += (storedUID.uidByte[i] < 0x10 ? "0" : ""); rfidMsg += String(storedUID.uidByte[i], HEX); }
+  rfidMsg.toUpperCase(); 
+  if (!offlineMode && !isConfigMode) client.publish(client_rfid, (char*)rfidMsg.c_str()); 
+  return rfidMsg;
 }
 #endif
