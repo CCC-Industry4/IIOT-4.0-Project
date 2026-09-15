@@ -37,15 +37,16 @@ const char* wifi_pass = nullptr;
 
 #include "pins.h"
 #define MAX_RULES 20 
-#define MAX_FOBS 5 // Support up to 5 distinct Key Fobs
+#define MAX_FOBS 5 
 
 struct Rule {
   String source;    
   String op;        
   String value;     
   String action[3]; 
-  String extra[3];  
-  bool alternate[3]; // Stores the "Revert when false" checkbox state
+  String mode[3];   
+  String extra[3];  // Stores 4 comma-separated HEX colors e.g., "#FF0000,#00FF00,#0000FF,#FFFFFF"
+  bool alternate[3]; 
 };
 
 Rule smartHomeRules[MAX_RULES];
@@ -135,8 +136,8 @@ void updateLCD();
 void onClientConnect(WiFiEvent_t event, WiFiEventInfo_t info);
 void callback(char* topic, byte* message, unsigned int length);
 void executeAllActions(Rule r);
-void executeAction(String action, String extra);
-void executeInverseAction(String action);
+void executeAction(String target, String mode, String extra);
+void executeInverseAction(String target, String mode, String extra);
 void stripOff();
 void evaluateRules(String event = "");
 
@@ -240,7 +241,8 @@ void setup() {
     smartHomeRules[i].value  = preferences.getString(("val" + String(i)).c_str(), "");
     for(int a=0; a<3; a++) {
       smartHomeRules[i].action[a] = preferences.getString(("a" + String(i) + "_" + String(a)).c_str(), "none");
-      smartHomeRules[i].extra[a]  = preferences.getString(("ext" + String(i) + "_" + String(a)).c_str(), "");
+      smartHomeRules[i].mode[a]   = preferences.getString(("m" + String(i) + "_" + String(a)).c_str(), "toggle");
+      smartHomeRules[i].extra[a]  = preferences.getString(("ext" + String(i) + "_" + String(a)).c_str(), "#FFFFFF,#FFFFFF,#FFFFFF,#FFFFFF");
       smartHomeRules[i].alternate[a] = preferences.getBool(("alt" + String(i) + "_" + String(a)).c_str(), false);
     }
   }
@@ -335,10 +337,7 @@ void setup() {
     IPAddress apIP(192, 168, 4, 1);
     WiFi.softAPConfig(apIP, apIP, IPAddress(255, 255, 255, 0));
     
-    // Moved to Wi-Fi Channel 6 (less congested)
     WiFi.softAP(apNameStr.c_str(), apPassStr.c_str(), 6);
-    
-    // Use explicit ESP32 flag for no power saving
     WiFi.setSleep(WIFI_PS_NONE);
     delay(100); 
     
@@ -487,15 +486,10 @@ void loop() {
   delay(10); 
 }
 
-void executeInverseAction(String action) {
-  if (action == "fan_on") executeAction("fan_off", "");
-  else if (action == "fan_off") executeAction("fan_on", "");
-  else if (action == "door_open") executeAction("door_close", "");
-  else if (action == "door_close") executeAction("door_open", "");
-  else if (action == "window_open") executeAction("window_close", "");
-  else if (action == "window_close") executeAction("window_open", "");
-  else if (action == "strip_on") stripOff();
-  else if (action == "led_toggle" || action == "strip_toggle") executeAction(action, ""); // Toggle again reverts it
+void executeInverseAction(String target, String mode, String extra) {
+  if (mode == "on") executeAction(target, "off", extra);
+  else if (mode == "off") executeAction(target, "on", extra);
+  else if (mode == "toggle") executeAction(target, "toggle", extra);
 }
 
 void evaluateRules(String triggerEvent) {
@@ -535,7 +529,7 @@ void evaluateRules(String triggerEvent) {
       }
       else if (r.source == "touch") {
 #ifdef touchPin
-        currentVal = (touchRead(touchPin) > 0 && touchRead(touchPin) < 40) ? 1 : 0;
+        currentVal = digitalRead(touchPin); 
 #endif
       }
       else if (r.source == "gas") {
@@ -565,11 +559,11 @@ void evaluateRules(String triggerEvent) {
         executeAllActions(r);
       } 
       else {
-        bool isToggleOrFlash = false;
+        bool isToggle = false;
         for(int a=0; a<3; a++) {
-            if (r.action[a].indexOf("toggle") >= 0) isToggleOrFlash = true;
+            if (r.mode[a] == "toggle") isToggle = true;
         }
-        if (isToggleOrFlash) {
+        if (isToggle) {
           if (!ruleLastState[i]) executeAllActions(r); 
         } 
         else {
@@ -580,7 +574,7 @@ void evaluateRules(String triggerEvent) {
     else if (ruleLastState[i] && (isContinuousBtn || (!r.source.startsWith("btn") && !r.source.startsWith("fob")))) {
        for(int a=0; a<3; a++) {
            if (r.alternate[a]) {
-             executeInverseAction(r.action[a]);
+             executeInverseAction(r.action[a], r.mode[a], r.extra[a]);
            }
        }
     }
@@ -591,18 +585,27 @@ void evaluateRules(String triggerEvent) {
   }
 }
 
-void applyCustomColors(String extra) {
+// Splits the comma-separated hex values and applies them respectively to up to 4 LEDs
+void applyCustomColors(String hexColors) {
 #ifdef LEDStripPin
-  int colors[12] = {0};
-  int startIdx = 0;
-  for(int i=0; i<12; i++) {
-      int commaIdx = extra.indexOf(',', startIdx);
-      if (commaIdx == -1) commaIdx = extra.length();
-      colors[i] = extra.substring(startIdx, commaIdx).toInt();
-      startIdx = commaIdx + 1;
-  }
-  for (int i = 0; i < 4; i++) {
-    if (i < strip.numPixels()) strip.setPixelColor(i, strip.Color(colors[i*3], colors[i*3+1], colors[i*3+2]));
+  int start = 0;
+  for (int i = 0; i < strip.numPixels(); i++) {
+    String colorStr = "#000000"; // default to black/off if data is missing
+    
+    if (start < hexColors.length()) {
+      int end = hexColors.indexOf(',', start);
+      if (end == -1) end = hexColors.length();
+      colorStr = hexColors.substring(start, end);
+      start = end + 1;
+    }
+    
+    if (colorStr.startsWith("#")) {
+      long rgb = strtol(colorStr.substring(1).c_str(), NULL, 16);
+      int r = (rgb >> 16) & 0xFF;
+      int g = (rgb >> 8) & 0xFF;
+      int b = rgb & 0xFF;
+      strip.setPixelColor(i, strip.Color(r, g, b));
+    }
   }
   strip.show();
 #endif
@@ -617,68 +620,48 @@ void stripOff() {
 
 void executeAllActions(Rule r) {
     for(int a=0; a<3; a++) {
-        if(r.action[a] != "none" && r.action[a] != "") executeAction(r.action[a], r.extra[a]);
+        if(r.action[a] != "none" && r.action[a] != "") {
+            executeAction(r.action[a], r.mode[a], r.extra[a]);
+        }
     }
 }
 
-void executeAction(String action, String extra) {
+void executeAction(String target, String mode, String extra) {
   Buzzer buzz(buzzerPin);
-  if (action == "fan_toggle") { fanIsOn = !fanIsOn;
+  bool toggle = (mode == "toggle");
+  bool turnOn = (mode == "on");
+
+  if (target == "fan") {
+    if (toggle) fanIsOn = !fanIsOn; else fanIsOn = turnOn;
 #ifdef fanPin1
     analogWrite(fanPin1, fanIsOn ? 255 : 0); digitalWrite(fanPin2, LOW);
 #endif
   } 
-  else if (action == "fan_on") { fanIsOn = true;
-#ifdef fanPin1
-    analogWrite(fanPin1, 255); digitalWrite(fanPin2, LOW);
-#endif
-  }
-  else if (action == "fan_off") { fanIsOn = false;
-#ifdef fanPin1
-    analogWrite(fanPin1, 0); digitalWrite(fanPin2, LOW);
-#endif
-  }
-  else if (action == "led_toggle") { ledIsOn = !ledIsOn;
+  else if (target == "led") {
+    if (toggle) ledIsOn = !ledIsOn; else ledIsOn = turnOn;
 #ifdef LEDPin
     digitalWrite(LEDPin, ledIsOn ? HIGH : LOW);
 #endif
   }
-  else if (action == "door_toggle") { doorIsOpen = !doorIsOpen;
+  else if (target == "door") {
+    if (toggle) doorIsOpen = !doorIsOpen; else doorIsOpen = turnOn;
 #ifdef doorServo
     Dservo.write(doorIsOpen ? 180 : 0);
 #endif
   }
-  else if (action == "door_open") { doorIsOpen = true;
-#ifdef doorServo
-    Dservo.write(180);
-#endif
-  }
-  else if (action == "door_close") { doorIsOpen = false;
-#ifdef doorServo
-    Dservo.write(0);
-#endif
-  }
-  else if (action == "window_toggle") { windowIsOpen = !windowIsOpen;
+  else if (target == "window") {
+    if (toggle) windowIsOpen = !windowIsOpen; else windowIsOpen = turnOn;
 #ifdef windowServo
     Wservo.write(windowIsOpen ? 165 : 50);
 #endif
   }
-  else if (action == "window_open") { windowIsOpen = true;
-#ifdef windowServo
-    Wservo.write(165);
-#endif
+  else if (target == "buzzer") {
+    buzz.sound(165, 200);
   }
-  else if (action == "window_close") { windowIsOpen = false;
-#ifdef windowServo
-    Wservo.write(50);
-#endif
-  }
-  else if (action == "buzzer_beep") buzz.sound(165, 200);
-  else if (action == "strip_toggle") {
-    stripIsOn = !stripIsOn;
+  else if (target == "strip") {
+    if (toggle) stripIsOn = !stripIsOn; else stripIsOn = turnOn;
     if (stripIsOn) applyCustomColors(extra); else stripOff();
   }
-  else if (action == "strip_on") { stripIsOn = true; applyCustomColors(extra); }
 }
 
 void updateLCD() {
@@ -797,13 +780,23 @@ void setupWebHandlers() {
       delay(50);
     }
     if(scannedUID != "") {
-      mylcd.clear(); mylcd.setCursor(0, 0); mylcd.print("SUCCESS!");
-      mylcd.setCursor(0, 1); mylcd.print(scannedUID);
-      knownFobs[s] = scannedUID; preferences.putString(("fob"+String(s)).c_str(), scannedUID); 
+      bool isDuplicate = false;
+      for(int i=0; i<MAX_FOBS; i++) {
+        if (knownFobs[i] == scannedUID) isDuplicate = true;
+      }
       
-      Buzzer buzz(buzzerPin); 
-      buzz.sound(165, 200); 
-      delay(1500);
+      if (isDuplicate) {
+         mylcd.clear(); mylcd.setCursor(0, 0); mylcd.print("ALREADY PAIRED");
+         delay(1500);
+      } else {
+        mylcd.clear(); mylcd.setCursor(0, 0); mylcd.print("SUCCESS!");
+        mylcd.setCursor(0, 1); mylcd.print(scannedUID);
+        knownFobs[s] = scannedUID; preferences.putString(("fob"+String(s)).c_str(), scannedUID); 
+        
+        Buzzer buzz(buzzerPin); 
+        buzz.sound(165, 200); 
+        delay(1500);
+      }
     } else { mylcd.clear(); mylcd.setCursor(0, 0); mylcd.print("TIMEOUT"); delay(1500); }
     server.sendHeader("Location", "/fobs"); server.send(302, "text/plain", "");
   });
@@ -815,7 +808,7 @@ void setupWebHandlers() {
     if (editId < 0) editId = 0; if (editId >= MAX_RULES) editId = MAX_RULES - 1;
 
     String page;
-    page.reserve(10000); // Reserve memory upfront to avoid fragmentation
+    page.reserve(10000); 
     
     page += "<!DOCTYPE html><html><head><meta name='viewport' content='width=device-width, initial-scale=1'><style>"
             "body{font-size:18px; font-family:Arial; margin:15px;} select,input,button{font-size:16px; padding:6px; margin-bottom:8px;} "
@@ -827,26 +820,44 @@ void setupWebHandlers() {
             "  var vIn = document.getElementById('valInput');"
             "  var vBtn = document.getElementById('valSelBtn');"
             "  var vBool = document.getElementById('valSelBool');"
+            
             "  vIn.style.display = 'none'; vIn.disabled = true;"
             "  vBtn.style.display = 'none'; vBtn.disabled = true;"
             "  vBool.style.display = 'none'; vBool.disabled = true;"
+            
+            "  var isMomentary = (src.indexOf('fob') === 0 || ((src === 'btn1' || src === 'btn2') && vBtn.value !== 'raw'));"
+            "  for(var i=0; i<3; i++) {"
+            "    var altCb = document.getElementById('altWrap_' + i);"
+            "    if (altCb) altCb.style.display = isMomentary ? 'none' : 'inline-block';"
+            "  }"
+
             "  if(src === 'btn1' || src === 'btn2') {"
             "    opC.style.display = 'none'; vBtn.style.display = 'inline-block'; vBtn.disabled = false;"
             "  } else if(src.indexOf('fob') === 0) {"
             "    opC.style.display = 'none';"
             "  } else if(src === 'motion' || src === 'gas' || src === 'touch') {"
-            "    opC.style.display = 'inline-block'; document.getElementById('opSelect').value = '==';"
+            "    opC.style.display = 'none';" 
             "    vBool.style.display = 'inline-block'; vBool.disabled = false;"
             "  } else {"
             "    opC.style.display = 'inline-block'; vIn.style.display = 'inline-block'; vIn.disabled = false; vIn.type = 'number'; vIn.step = 'any';"
             "  }"
             "  for(var i=0; i<3; i++) updateActionUI(i);"
             "}"
+            
             "function updateActionUI(idx) {"
             "  var act = document.getElementById('actSelect_' + idx).value;"
+            "  var modSel = document.getElementById('modeSel_' + idx);"
             "  var ledDiv = document.getElementById('ledConfig_' + idx);"
-            "  if(act && act.indexOf('strip_') === 0) ledDiv.style.display = 'block';"
+            
+            "  if (act === 'none' || act === 'buzzer') modSel.style.display = 'none';"
+            "  else modSel.style.display = 'inline-block';"
+            
+            "  if(act === 'strip') ledDiv.style.display = 'block';"
             "  else if (ledDiv) ledDiv.style.display = 'none';"
+            
+            "  var optOn = modSel.options[1]; var optOff = modSel.options[2];"
+            "  if (act === 'window' || act === 'door') { optOn.text = 'Open'; optOff.text = 'Close'; }"
+            "  else { optOn.text = 'Turn ON'; optOff.text = 'Turn OFF'; }"
             "}"
             "window.onload = updateUI;"
             "</script></head><body><h2>Rule Sandbox Configuration</h2>";
@@ -868,7 +879,13 @@ void setupWebHandlers() {
     page += "<b>Editing Rule " + String(editId+1) + "</b><br><br>IF Source: <select id='srcSelect' name='src' onchange='updateUI()'>";
     page += getOpt("none", "None", smartHomeRules[editId].source) + getOpt("btn1", "Button 1", smartHomeRules[editId].source) + getOpt("btn2", "Button 2", smartHomeRules[editId].source);
     page += getOpt("fob_any", "Any Registered Fob", smartHomeRules[editId].source);
-    for(int i=0; i<MAX_FOBS; i++) page += getOpt("fob" + String(i+1), "Fob Slot " + String(i+1), smartHomeRules[editId].source);
+    
+    for(int i=0; i<MAX_FOBS; i++) {
+        if (knownFobs[i] != "") {
+             page += getOpt("fob" + String(i+1), "Fob Slot " + String(i+1), smartHomeRules[editId].source);
+        }
+    }
+    
     page += getOpt("temp", "Temperature", smartHomeRules[editId].source) + getOpt("hum", "Humidity", smartHomeRules[editId].source) + getOpt("touch", "Touch Sensor", smartHomeRules[editId].source);
     page += getOpt("motion", "Motion Sensor", smartHomeRules[editId].source) + getOpt("gas", "Gas Sensor", smartHomeRules[editId].source) + getOpt("water", "Water Level", smartHomeRules[editId].source) + getOpt("soil", "Soil Humidity", smartHomeRules[editId].source);
     page += "</select><br>";
@@ -876,28 +893,51 @@ void setupWebHandlers() {
     page += "<span id='opContainer'>Operator: <select id='opSelect' name='op'>" + getOpt("==", "Is (==)", smartHomeRules[editId].op) + getOpt(">", "Greater (>)", smartHomeRules[editId].op) + getOpt("<", "Less (<)", smartHomeRules[editId].op) + "</select><br></span>";
 
     String curVal = smartHomeRules[editId].value;
-    page += "Value: <input type='text' id='valInput' name='val' value='" + curVal + "' placeholder='...'>";
-    page += "<select id='valSelBtn' name='val' style='display:none;'>" + getOpt("tap", "Single Tap", curVal) + getOpt("double", "Double Tap", curVal) + getOpt("hold", "Hold", curVal) + getOpt("raw", "While Holding", curVal) + "</select>";
-    page += "<select id='valSelBool' name='val' style='display:none;'>" + getOpt("1", "True / Detected (1)", curVal) + getOpt("0", "False / Clear (0)", curVal) + "</select><br><br><hr style='border:1px solid #ddd;'>";
+    page += "Value: <input type='text' id='valInput' name='val_num' value='" + curVal + "' placeholder='...'>";
+    page += "<select id='valSelBtn' name='val_btn' onchange='updateUI()' style='display:none;'>" + getOpt("tap", "Single Tap", curVal) + getOpt("double", "Double Tap", curVal) + getOpt("hold", "Hold", curVal) + getOpt("raw", "While Holding", curVal) + "</select>";
+    page += "<select id='valSelBool' name='val_bool' style='display:none;'>" + getOpt("1", "True", curVal) + getOpt("0", "False", curVal) + "</select><br><br><hr style='border:1px solid #ddd;'>";
 
     for(int a=0; a<3; a++) {
         page += "<b>THEN Action " + String(a+1) + ":</b> <select id='actSelect_" + String(a) + "' name='a" + String(a) + "' onchange='updateActionUI(" + String(a) + ")'>";
-        page += getOpt("none", "None", smartHomeRules[editId].action[a]) + getOpt("fan_toggle", "Toggle Fan", smartHomeRules[editId].action[a]) + getOpt("fan_on", "Turn Fan ON", smartHomeRules[editId].action[a]) + getOpt("fan_off", "Turn Fan OFF", smartHomeRules[editId].action[a]);
-        page += getOpt("led_toggle", "Toggle LED", smartHomeRules[editId].action[a]) + getOpt("door_toggle", "Toggle Door", smartHomeRules[editId].action[a]) + getOpt("door_open", "Open Door", smartHomeRules[editId].action[a]) + getOpt("door_close", "Close Door", smartHomeRules[editId].action[a]);
-        page += getOpt("window_toggle", "Toggle Window", smartHomeRules[editId].action[a]) + getOpt("window_open", "Open Window", smartHomeRules[editId].action[a]) + getOpt("window_close", "Close Window", smartHomeRules[editId].action[a]) + getOpt("buzzer_beep", "Beep Buzzer", smartHomeRules[editId].action[a]);
-        page += getOpt("strip_toggle", "Toggle Custom LED Strip", smartHomeRules[editId].action[a]) + getOpt("strip_on", "Turn Custom LED Strip ON", smartHomeRules[editId].action[a]) + "</select>";
+        page += getOpt("none", "None", smartHomeRules[editId].action[a]);
+        page += getOpt("fan", "Fan", smartHomeRules[editId].action[a]);
+        page += getOpt("led", "LED", smartHomeRules[editId].action[a]);
+        page += getOpt("door", "Door", smartHomeRules[editId].action[a]);
+        page += getOpt("window", "Window", smartHomeRules[editId].action[a]);
+        page += getOpt("buzzer", "Buzzer Beep", smartHomeRules[editId].action[a]);
+        page += getOpt("strip", "Custom LED Strip", smartHomeRules[editId].action[a]);
+        page += "</select> ";
+
+        page += "<select id='modeSel_" + String(a) + "' name='m" + String(a) + "'>";
+        page += getOpt("toggle", "Toggle", smartHomeRules[editId].mode[a]);
+        page += getOpt("on", "Turn ON", smartHomeRules[editId].mode[a]);
+        page += getOpt("off", "Turn OFF", smartHomeRules[editId].mode[a]);
+        page += "</select> ";
 
         String checked = smartHomeRules[editId].alternate[a] ? "checked" : "";
-        page += " <label style='font-size:14px; margin-left:10px;'><input type='checkbox' name='alt" + String(a) + "' value='1' " + checked + "> Revert when false</label><br>";
+        page += "<span id='altWrap_" + String(a) + "' style='font-size:14px; margin-left:10px;'><input type='checkbox' name='alt" + String(a) + "' value='1' " + checked + "> Revert when false</span><br>";
 
-        page += "<div id='ledConfig_" + String(a) + "' style='display:none; margin-top:5px; margin-bottom:15px; padding:10px; background:#ddd; border-radius:5px;'><b>LED Strip Colors (0-255)</b><br>";
-        int c[12] = {0}; String curExt = smartHomeRules[editId].extra[a];
-        if (curExt.length() > 0) {
-            int startIdx = 0;
-            for(int i=0; i<12; i++) { int commaIdx = curExt.indexOf(',', startIdx); if (commaIdx == -1) commaIdx = curExt.length(); c[i] = curExt.substring(startIdx, commaIdx).toInt(); startIdx = commaIdx + 1; }
+        // Fetch colors array and ensure it covers all 4 individual LEDS
+        String hexColor = smartHomeRules[editId].extra[a];
+        String colors[4] = {"#FFFFFF", "#FFFFFF", "#FFFFFF", "#FFFFFF"};
+        if (hexColor.indexOf(',') != -1) {
+            int start = 0;
+            for(int c = 0; c < 4; c++) {
+                int end = hexColor.indexOf(',', start);
+                if (end == -1) end = hexColor.length();
+                colors[c] = hexColor.substring(start, end);
+                start = end + 1;
+            }
+        } else if (hexColor != "") {
+            colors[0] = hexColor; // Backwards compatibility for old saved rules
         }
-        for(int i=1; i<=4; i++) {
-           page += "LED " + String(i) + ": R <input type='number' name='r" + String(i) + "_" + String(a) + "' value='" + String(c[(i-1)*3]) + "' min='0' max='255' style='width:60px;'> G <input type='number' name='g" + String(i) + "_" + String(a) + "' value='" + String(c[(i-1)*3+1]) + "' min='0' max='255' style='width:60px;'> B <input type='number' name='b" + String(i) + "_" + String(a) + "' value='" + String(c[(i-1)*3+2]) + "' min='0' max='255' style='width:60px;'><br>";
+
+        page += "<div id='ledConfig_" + String(a) + "' style='display:none; margin-top:5px; margin-bottom:15px; padding:10px; background:#ddd; border-radius:5px;'>";
+        page += "<b>LED Colors (1-4):</b><br>";
+        
+        // Dynamically create 4 color pickers per action slot
+        for (int c = 1; c <= 4; c++) {
+            page += "<input type='color' name='hex" + String(a) + "_" + String(c) + "' value='" + colors[c-1] + "' title='LED " + String(c) + "' style='width:45px; height:40px; padding:0px; margin-right:5px; cursor:pointer;'>";
         }
         page += "</div><br>";
     }
@@ -915,23 +955,35 @@ void setupWebHandlers() {
     if (idx >= 0 && idx < MAX_RULES) {
       if (act_param == "del") {
         smartHomeRules[idx].source = "none"; smartHomeRules[idx].op = "=="; smartHomeRules[idx].value = "";
-        for(int a=0; a<3; a++) { smartHomeRules[idx].action[a] = "none"; smartHomeRules[idx].extra[a] = ""; smartHomeRules[idx].alternate[a] = false; }
+        for(int a=0; a<3; a++) { smartHomeRules[idx].action[a] = "none"; smartHomeRules[idx].mode[a] = "toggle"; smartHomeRules[idx].extra[a] = "#FFFFFF,#FFFFFF,#FFFFFF,#FFFFFF"; smartHomeRules[idx].alternate[a] = false; }
       } else {
-        String s = server.arg("src"); String o = server.arg("op"); String v = server.arg("val");
+        String s = server.arg("src"); String o = server.arg("op"); 
+        
+        String v = "";
+        if (server.hasArg("val_btn")) v = server.arg("val_btn");
+        else if (server.hasArg("val_bool")) v = server.arg("val_bool");
+        else if (server.hasArg("val_num")) v = server.arg("val_num");
+
         if (s == "btn1" || s == "btn2" || s.startsWith("fob")) o = "=="; 
         else if (s == "motion" || s == "gas" || s == "touch") { o = "=="; if (v != "0" && v != "1") v = "1"; } 
         else if (s != "none") { float checkNum = v.toFloat(); if (checkNum == 0.0 && v != "0" && v != "0.0") v = "0"; }
         smartHomeRules[idx].source = s; smartHomeRules[idx].op = o; smartHomeRules[idx].value = v;
 
         for(int a=0; a<3; a++) {
-            String actStr = server.arg("a" + String(a));
-            if (actStr.indexOf("strip_") == 0) {
-              String ext = "";
-              auto clamp = [](String val) { if (val == "") return 0; int v = val.toInt(); return (v < 0) ? 0 : ((v > 255) ? 255 : v); };
-              for (int j = 1; j <= 4; j++) ext += String(clamp(server.arg("r" + String(j) + "_" + String(a)))) + "," + String(clamp(server.arg("g" + String(j) + "_" + String(a)))) + "," + String(clamp(server.arg("b" + String(j) + "_" + String(a)))) + (j == 4 ? "" : ",");
-              smartHomeRules[idx].extra[a] = ext;
-            } else smartHomeRules[idx].extra[a] = "";
-            smartHomeRules[idx].action[a] = actStr;
+            smartHomeRules[idx].action[a] = server.arg("a" + String(a));
+            smartHomeRules[idx].mode[a] = server.arg("m" + String(a));
+            
+            // Collect the 4 color inputs and join them using commas
+            if (smartHomeRules[idx].action[a] == "strip") {
+              String c1 = server.arg("hex" + String(a) + "_1");
+              String c2 = server.arg("hex" + String(a) + "_2");
+              String c3 = server.arg("hex" + String(a) + "_3");
+              String c4 = server.arg("hex" + String(a) + "_4");
+              smartHomeRules[idx].extra[a] = c1 + "," + c2 + "," + c3 + "," + c4;
+            } else {
+              smartHomeRules[idx].extra[a] = "";
+            }
+            
             smartHomeRules[idx].alternate[a] = server.hasArg("alt" + String(a));
         }
       }
@@ -940,6 +992,7 @@ void setupWebHandlers() {
       preferences.putString(("val" + String(idx)).c_str(), smartHomeRules[idx].value);
       for(int a=0; a<3; a++) {
          preferences.putString(("a" + String(idx) + "_" + String(a)).c_str(), smartHomeRules[idx].action[a]);
+         preferences.putString(("m" + String(idx) + "_" + String(a)).c_str(), smartHomeRules[idx].mode[a]);
          preferences.putString(("ext" + String(idx) + "_" + String(a)).c_str(), smartHomeRules[idx].extra[a]);
          preferences.putBool(("alt" + String(idx) + "_" + String(a)).c_str(), smartHomeRules[idx].alternate[a]);
       }
@@ -953,7 +1006,6 @@ void setupWebHandlers() {
     delay(1000); ESP.restart();
   });
 
-  // Aggressive No-Cache headers on the Captive Portal Redirect
   server.onNotFound([]() {
     server.sendHeader("Connection", "close"); 
     server.sendHeader("Cache-Control", "no-cache, no-store, must-revalidate");
@@ -1065,7 +1117,7 @@ void gas() {
 #ifdef touchPin
 void touch() {
   static int touchOld = -1; 
-  int touchNew = (touchRead(touchPin) > 0 && touchRead(touchPin) < 40) ? 1 : 0; 
+  int touchNew = digitalRead(touchPin); 
   if (touchOld != touchNew) { 
     if (!offlineMode) client.publish(client_touch, String(touchNew).c_str()); 
     touchOld = touchNew; 
