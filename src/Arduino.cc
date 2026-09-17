@@ -240,8 +240,8 @@ void setup() {
   Serial.begin(115200);
   
   // EXPLICITLY ALLOCATE TIMERS (Prevents buzzer/analogWrite from stealing servo channels)
-  ESP32PWM::allocateTimer(0);
-  ESP32PWM::allocateTimer(1);
+  // Reserve only timers 2 and 3 for the servos. 
+  // Leaves Timer 0 and 1 free for the Buzzer and Fan.
   ESP32PWM::allocateTimer(2);
   ESP32PWM::allocateTimer(3);
 
@@ -309,7 +309,9 @@ void setup() {
   pinMode(touchPin, INPUT);
 #endif
 #ifdef fanPin1
-  pinMode(fanPin1, OUTPUT);
+  // Explicitly assign the fan to PWM Channel 10 to avoid servo conflicts
+  ledcSetup(10, 5000, 8); 
+  ledcAttachPin(fanPin1, 10);
 #endif
 #ifdef fanPin2
   pinMode(fanPin2, OUTPUT);
@@ -676,7 +678,8 @@ void executeAction(String target, String mode, String extra) {
     if(fanIsOn != wantFan) {
       fanIsOn = wantFan;
 #ifdef fanPin1
-      analogWrite(fanPin1, fanIsOn ? 255 : 0); digitalWrite(fanPin2, LOW);
+      ledcWrite(10, fanIsOn ? 255 : 0); 
+      digitalWrite(fanPin2, LOW);
 #endif
     }
   } 
@@ -1202,7 +1205,7 @@ void callback(char* topic, byte* message, unsigned int length) {
   }
   if (String(topic) == control5) {
 #ifdef fanPin1    
-    analogWrite(fanPin1, messageTemp.toFloat() ? ((messageTemp.toFloat()) * 130 + 125) : 0); 
+    ledcWrite(10, messageTemp.toFloat() ? ((messageTemp.toFloat()) * 130 + 125) : 0); 
     digitalWrite(fanPin2, LOW); 
     fanIsOn = (messageTemp.toFloat() > 0);
 #endif    
