@@ -57,11 +57,17 @@ String knownFobs[MAX_FOBS];
 Servo Dservo;
 Servo Wservo;
 
+// GLOBAL BUZZER OBJECT (Fixes PWM timer exhaustion)
+#ifdef buzzerPin
+Buzzer globalBuzz(buzzerPin);
+#endif
+
 bool fanIsOn = false;
 bool ledIsOn = false;
 bool doorIsOpen = false;
 bool windowIsOpen = false;
 bool stripIsOn = false;
+bool touchIsOn = false; // <-- GLOBAL VARIABLE FOR TOUCH
 
 bool offlineMode = false;
 bool isConfigMode = false; 
@@ -232,6 +238,13 @@ ButtonHandler btn2(-1, "btn2");
 
 void setup() {
   Serial.begin(115200);
+  
+  // EXPLICITLY ALLOCATE TIMERS (Prevents buzzer/analogWrite from stealing servo channels)
+  ESP32PWM::allocateTimer(0);
+  ESP32PWM::allocateTimer(1);
+  ESP32PWM::allocateTimer(2);
+  ESP32PWM::allocateTimer(3);
+
   preferences.begin("smarthome", false);
   
   for(int i=0; i<MAX_FOBS; i++) knownFobs[i] = preferences.getString(("fob"+String(i)).c_str(), "");
@@ -290,7 +303,7 @@ void setup() {
   pinMode(pushbutton1Pin, INPUT_PULLUP);
 #endif
 #ifdef pushbutton2Pin
-  pinMode(pushbutton2Pin, INPUT_PULLUP);
+  //pinMode(pushbutton2Pin, INPUT_PULLUP); // last line changed WIP 
 #endif
 #ifdef touchPin
   pinMode(touchPin, INPUT);
@@ -410,15 +423,6 @@ void setup() {
       delay(1000);
       attempts++;
     }
-    
-    if (client.connected()) {
-      client.publish(LEDcolorStrip, "0");
-      client.publish(control1, "null");
-      client.publish(control2, "null");
-      client.publish(control3, "null");
-      client.publish(control4, "null");
-      client.publish(control5, "null");
-    }
   }
   delay(500);
   updateLCD();
@@ -455,13 +459,14 @@ void loop() {
 #ifdef dht11PIN
     temperature_humidity();  
 #endif
-#ifdef touchPin
-    touch();
-#endif
     updateLCD(); 
     evaluateRules(""); 
   }
 
+  // --- FAST POLLING SENSORS ---
+#ifdef touchPin
+  touch(); 
+#endif
 #ifdef gasPin
   gas();
 #endif
@@ -485,13 +490,13 @@ void loop() {
   }
 #endif
 
-  // --- BUTTON FIX: Send true 1 / 0 to Ignition immediately ---
+  // --- BUTTON EVENTS ---
 #ifdef pushbutton1Pin
   static bool pb1Old = 1;
   static unsigned long pb1Db = 0;
   bool pb1New = digitalRead(pushbutton1Pin);
   if (pb1Old != pb1New && (millis() - pb1Db > 50)) {
-    if (!offlineMode) client.publish(client_pushbutton1, pb1New ? "1" : "0");
+    if (!offlineMode) client.publish(client_pushbutton1, pb1New ? "1" : "0", true); 
     pb1Old = pb1New;
     pb1Db = millis();
   }
@@ -502,7 +507,7 @@ void loop() {
   static unsigned long pb2Db = 0;
   bool pb2New = digitalRead(pushbutton2Pin);
   if (pb2Old != pb2New && (millis() - pb2Db > 50)) {
-    if (!offlineMode) client.publish(client_pushbutton2, pb2New ? "1" : "0");
+    if (!offlineMode) client.publish(client_pushbutton2, pb2New ? "1" : "0", true); 
     pb2Old = pb2New;
     pb2Db = millis();
   }
@@ -566,32 +571,7 @@ void evaluateRules(String triggerEvent) {
       }
       else if (r.source == "touch") {
 #ifdef touchPin
-        static int bufRule[4] = {0, 0, 0, 0};
-        static int idxRule = 0;
-        static int ruleTouchState = 0;
-        
-        int rawValue = analogRead(touchPin);
-        
-        int oldestIdx = (idxRule + 1) % 4;
-        int oldestValue = bufRule[oldestIdx];
-        
-        bufRule[idxRule] = rawValue;
-        idxRule = (idxRule + 1) % 4;
-        
-        int avg = (bufRule[0] + bufRule[1] + bufRule[2] + bufRule[3]) / 4;
-        int roc = rawValue - oldestValue;
-        
-        if (ruleTouchState == 0) {
-          if (avg > 2500 && roc > 0) {
-            ruleTouchState = 1;
-          }
-        } else {
-          // Turn OFF: Plunging rapidly OR baseline dropped below 2000
-          if (roc < -200 || avg < 2000) {
-            ruleTouchState = 0;
-          }
-        }
-        currentVal = ruleTouchState; 
+        currentVal = touchIsOn ? 1.0 : 0.0;
 #endif
       }
       else if (r.source == "gas") {
@@ -629,7 +609,6 @@ void evaluateRules(String triggerEvent) {
           if (!ruleLastState[i]) executeAllActions(r); 
         } 
         else {
-          // Changed slightly here to prevent continuous rapid firing, though executeAction blocks duplicates
           executeAllActions(r);
         }
       }
@@ -689,7 +668,6 @@ void executeAllActions(Rule r) {
 }
 
 void executeAction(String target, String mode, String extra) {
-  Buzzer buzz(buzzerPin);
   bool toggle = (mode == "toggle");
   bool turnOn = (mode == "on");
 
@@ -713,7 +691,6 @@ void executeAction(String target, String mode, String extra) {
   }
   else if (target == "door") {
     bool wantOpen = toggle ? !doorIsOpen : turnOn;
-    // SERVO FIX: Only write if state actually changes to avoid jitter
     if(doorIsOpen != wantOpen) {
       doorIsOpen = wantOpen;
 #ifdef doorServo
@@ -723,7 +700,6 @@ void executeAction(String target, String mode, String extra) {
   }
   else if (target == "window") {
     bool wantOpen = toggle ? !windowIsOpen : turnOn;
-    // SERVO FIX: Only write if state actually changes to avoid jitter
     if(windowIsOpen != wantOpen) {
       windowIsOpen = wantOpen;
 #ifdef windowServo
@@ -732,12 +708,14 @@ void executeAction(String target, String mode, String extra) {
     }
   }
   else if (target == "buzzer") {
-    buzz.sound(165, 200);
+#ifdef buzzerPin
+    globalBuzz.sound(165, 200);
+#endif
   }
   else if (target == "strip") {
     bool wantStrip = toggle ? !stripIsOn : turnOn;
     if (wantStrip) applyCustomColors(extra); else stripOff();
-    stripIsOn = wantStrip; // Set after to allow custom colors to apply
+    stripIsOn = wantStrip;
   }
 }
 
@@ -870,8 +848,9 @@ void setupWebHandlers() {
         mylcd.setCursor(0, 1); mylcd.print(scannedUID);
         knownFobs[s] = scannedUID; preferences.putString(("fob"+String(s)).c_str(), scannedUID); 
         
-        Buzzer buzz(buzzerPin); 
-        buzz.sound(165, 200); 
+#ifdef buzzerPin
+        globalBuzz.sound(165, 200); 
+#endif
         delay(1500);
       }
     } else { mylcd.clear(); mylcd.setCursor(0, 0); mylcd.print("TIMEOUT"); delay(1500); }
@@ -994,7 +973,6 @@ void setupWebHandlers() {
         String checked = smartHomeRules[editId].alternate[a] ? "checked" : "";
         page += "<span id='altWrap_" + String(a) + "' style='font-size:14px; margin-left:10px;'><input type='checkbox' name='alt" + String(a) + "' value='1' " + checked + "> Revert when false</span><br>";
 
-        // Fetch colors array and ensure it covers all 4 individual LEDS
         String hexColor = smartHomeRules[editId].extra[a];
         String colors[4] = {"#FFFFFF", "#FFFFFF", "#FFFFFF", "#FFFFFF"};
         if (hexColor.indexOf(',') != -1) {
@@ -1006,13 +984,12 @@ void setupWebHandlers() {
                 start = end + 1;
             }
         } else if (hexColor != "") {
-            colors[0] = hexColor; // Backwards compatibility for old saved rules
+            colors[0] = hexColor; 
         }
 
         page += "<div id='ledConfig_" + String(a) + "' style='display:none; margin-top:5px; margin-bottom:15px; padding:10px; background:#ddd; border-radius:5px;'>";
         page += "<b>LED Colors (1-4):</b><br>";
         
-        // Dynamically create 4 color pickers per action slot
         for (int c = 1; c <= 4; c++) {
             page += "<input type='color' name='hex" + String(a) + "_" + String(c) + "' value='" + colors[c-1] + "' title='LED " + String(c) + "' style='width:45px; height:40px; padding:0px; margin-right:5px; cursor:pointer;'>";
         }
@@ -1122,9 +1099,56 @@ void handleWiFiFailure() {
 #endif
 }
 
-void reconnect() { if (client.connect(("home" + String(homeNumber)).c_str())) client.subscribe(client_subscribe_all); }
+// FORCE IGNITION TO GENERATE TAGS USING RETAINED MESSAGES (true)
+void reconnect() { 
+  if (client.connect(("home" + String(homeNumber)).c_str())) {
+    client.subscribe(client_subscribe_all); 
+    
+    // THE OLD CODE SECRET: Wait 500ms for Ignition to fully open the session 
+    // before we blast it with a dozen messages.
+    delay(500);
+    
+    // 1. Force Ignition to generate Control tags
+    client.publish(control1, "null", true);
+    client.publish(control2, "null", true);
+    client.publish(control3, "null", true);
+    client.publish(control4, "null", true);
+    client.publish(control5, "null", true);
+    client.publish(LEDcolorStrip, "0", true);
+
+    // 2. Force Ignition to generate Sensor tags 
+#ifdef motionPin
+    client.publish(client_motion, String(digitalRead(motionPin)).c_str(), true);
+#endif
+#ifdef gasPin
+    client.publish(client_gas, String(digitalRead(gasPin)).c_str(), true);
+#endif
+#ifdef pushbutton1Pin
+    client.publish(client_pushbutton1, String(digitalRead(pushbutton1Pin)).c_str(), true);
+#endif
+#ifdef pushbutton2Pin
+    client.publish(client_pushbutton2, String(digitalRead(pushbutton2Pin)).c_str(), true);
+#endif
+#ifdef waterLevelPin
+    client.publish(client_water, String(analogRead(waterLevelPin)).c_str(), true);
+#endif
+#ifdef soilHumidityPin
+    client.publish(client_soil, String(analogRead(soilHumidityPin)).c_str(), true);
+#endif
+#ifdef touchPin
+    // Publish a baseline value so the tag generates for the Raspberry Pi
+    client.publish(client_touch, "65", true);
+#endif
+  }
+}
+
 void onClientConnect(WiFiEvent_t event, WiFiEventInfo_t info) { }
-void count() { value++; if (!offlineMode) client.publish(client_count, String(value).c_str()); }
+
+// ADDED RETAINED TRUE FLAG TO COUNT
+void count() { 
+  value++; 
+  if (!offlineMode) client.publish(client_count, String(value).c_str(), true); 
+}
 
 void callback(char* topic, byte* message, unsigned int length) {
   String messageTemp;
@@ -1132,7 +1156,6 @@ void callback(char* topic, byte* message, unsigned int length) {
   if (messageTemp == "true" || messageTemp == "1") messageTemp = "1";
   else if (messageTemp == "false" || messageTemp == "0") messageTemp = "0";
 
-  Buzzer buzz(buzzerPin);
 #ifdef SMARTHOME
   if (String(topic) == control1) { 
     digitalWrite(LEDPin, messageTemp.toInt()); 
@@ -1141,7 +1164,6 @@ void callback(char* topic, byte* message, unsigned int length) {
   if (String(topic) == control2) {
 #ifdef doorServo    
     bool wantOpen = (messageTemp.toInt() == 1);
-    // SERVO FIX: Ensure we only write if the state actually changes
     if(doorIsOpen != wantOpen) {
       doorIsOpen = wantOpen;
       Dservo.write(doorIsOpen ? 180 : 0); 
@@ -1151,17 +1173,19 @@ void callback(char* topic, byte* message, unsigned int length) {
   if (String(topic) == control3) {
 #ifdef windowServo    
     bool wantOpen = (messageTemp.toInt() == 1);
-    // SERVO FIX: Ensure we only write if the state actually changes
     if(windowIsOpen != wantOpen) {
       windowIsOpen = wantOpen;
       Wservo.write(windowIsOpen ? 165 : 50); 
     }
 #endif    
   }
-  if (String(topic) == control4 && (messageTemp == "1")) { buzz.sound(165, 100); }
+  if (String(topic) == control4 && (messageTemp == "1")) { 
+#ifdef buzzerPin
+    globalBuzz.sound(165, 100); 
+#endif
+  }
   if (String(topic) == LEDcolorStrip) {
 #ifdef LEDStripPin
-    // COLOR FIX: Restored the full list of missing color mappings
     int msg = messageTemp.toInt();
     if (msg == 0) stripOff();
     else if (msg == 1) colorWipe(strip.Color(255, 0, 0), 50);
@@ -1187,7 +1211,6 @@ void callback(char* topic, byte* message, unsigned int length) {
 }
 
 #ifdef LEDStripPin
-// COLOR FIX: Restored missing old effects
 void colorWipe(uint32_t color, int wait) { 
   for (int i = 0; i < strip.numPixels(); i++) { 
     strip.setPixelColor(i, color); 
@@ -1225,11 +1248,15 @@ void theaterChaseRainbow(int wait) {
 }
 #endif
 
+// ADDED RETAINED TRUE FLAG TO TEMP AND HUMIDITY
 #ifdef dht11PIN
 void temperature_humidity() {
   if (xht.receive(dht)) {                  
     lastTemp = dht[2] + dht[3] / 10.0; lastHum = dht[0] + dht[1] / 10.0;  
-    if (!offlineMode) { client.publish(client_temperature, String(lastTemp).c_str()); client.publish(client_humidity, String(lastHum).c_str()); }
+    if (!offlineMode) { 
+      client.publish(client_temperature, String(lastTemp).c_str(), true); 
+      client.publish(client_humidity, String(lastHum).c_str(), true); 
+    }
   }
 }
 #endif
@@ -1237,91 +1264,91 @@ void temperature_humidity() {
 #ifdef motionPin
 void motion() {
   static bool motionOld = 1; bool motionNew = digitalRead(motionPin);
-  if (motionOld != motionNew) { if (!offlineMode) client.publish(client_motion, String(motionNew).c_str()); motionOld = motionNew; }
+  if (motionOld != motionNew) { 
+    if (!offlineMode) client.publish(client_motion, String(motionNew).c_str(), true); 
+    motionOld = motionNew; 
+  }
 }
 #endif
 
 #ifdef gasPin
 void gas() {
   static bool gasOld = 0; bool gasNew = digitalRead(gasPin);
-  if (gasOld != gasNew) { if (!offlineMode) client.publish(client_gas, String(gasNew).c_str()); gasOld = gasNew; }
+  if (gasOld != gasNew) { 
+    if (!offlineMode) client.publish(client_gas, String(gasNew).c_str(), true); 
+    gasOld = gasNew; 
+  }
 }
 #endif
 
-#ifdef touchPin
-// TOUCH SENSOR FIX: Restored to touchRead()
-#ifdef touchPin
-#ifdef touchPin
-#ifdef touchPin
-#ifdef touchPin
-#ifdef touchPin
-#ifdef touchPin
 #ifdef touchPin
 void touch() {
-  static int buf[4] = {0, 0, 0, 0}; 
-  static int idx = 0;
-  static int touchState = 0;
-  static int touchOld = -1;
-  
-  int rawValue = analogRead(touchPin); 
-  
-  // Find the oldest value in the buffer before we overwrite it
-  int oldestIdx = (idx + 1) % 4;
-  int oldestValue = buf[oldestIdx];
-  
-  // Put newest value in buffer and advance index
-  buf[idx] = rawValue;
-  idx = (idx + 1) % 4;
-  
-  // 1. Calculate Moving Average
-  int avg = (buf[0] + buf[1] + buf[2] + buf[3]) / 4;
-  
-  // 2. Calculate Rate of Change (Derivative: Newest - Oldest)
-  int roc = rawValue - oldestValue; 
+  // 1. Poll at 100ms. This is the sweet spot: it still reacts 10x a second 
+  // (feeling instant to us), but gives the pin enough time to actually discharge.
+  static unsigned long lastTouchPoll = 0;
+  if (millis() - lastTouchPoll < 100) return;
+  lastTouchPoll = millis();
 
-  // --- Debugging (remove // to see data again) ---
-   Serial.print("Raw: "); Serial.print(rawValue);
-   Serial.print(" | Avg: "); Serial.print(avg);
-   Serial.print(" | ROC: "); Serial.println(roc);
+  // Read the raw analog sensor value
+  int touchNewRaw = touchRead(touchPin);
   
-  // 3. State Machine Logic
-  if (touchState == 0) {
-    // Turn ON: Average is high AND it is climbing
-    if (avg > 2500 && roc > 0) {
-      touchState = 1;
-    }
-  } else {
-    // Turn OFF: Plunging rapidly OR baseline dropped below 2000
-    if (roc < -200 || avg < 2000) {
-      touchState = 0;
-    }
+  // 2. TIGHTEN THE HYSTERESIS: Catch the *start* of the release, not the end.
+  const int THRESHOLD_ON = 30;  // Drops below 30? ON.
+  const int THRESHOLD_OFF = 60; // Rises past 60? OFF. (Don't wait for it to reach 200!)
+  
+  static bool ruleTouchState = false;
+  bool stateChanged = false;
+
+  // Snap ON 
+  if (!ruleTouchState && touchNewRaw < THRESHOLD_ON) {
+    ruleTouchState = true;
+    stateChanged = true;
+  } 
+  // Snap OFF immediately as the value begins to recover past 60
+  else if (ruleTouchState && touchNewRaw > THRESHOLD_OFF) {
+    ruleTouchState = false;
+    stateChanged = true;
   }
   
-  if (touchState != touchOld) { 
-    if (!offlineMode) client.publish(client_touch, String(touchState).c_str());
-    touchOld = touchState;
+  // If the state snapped open or closed, trigger rules and MQTT instantly
+  if (stateChanged) {
+    touchIsOn = ruleTouchState;
+    evaluateRules(ruleTouchState ? "touch_on" : "touch_off");
+    
+    // Push the immediate state change to MQTT so Ignition updates instantly
+    if (!offlineMode) {
+      client.publish(client_touch, String(touchNewRaw).c_str(), true);
+    }
+  }
+
+  // 3. Publish the raw fluctuating value every 1 second (Matches home7 behavior)
+  static unsigned long lastMqttPublish = 0;
+  if (millis() - lastMqttPublish > 1000) {
+    if (!offlineMode) {
+      client.publish(client_touch, String(touchNewRaw).c_str(), true);
+    }
+    lastMqttPublish = millis();
   }
 }
-#endif
-#endif
-#endif
-#endif
-#endif
-#endif
-#endif
 #endif
 
 #ifdef waterLevelPin
 void waterLevel() {
   static int waterLevelOld = -100; int waterLevelNew = analogRead(waterLevelPin);
-  if (abs(waterLevelNew - waterLevelOld) > 50) { if (!offlineMode) client.publish(client_water, String(waterLevelNew).c_str()); waterLevelOld = waterLevelNew; }
+  if (abs(waterLevelNew - waterLevelOld) > 50) { 
+    if (!offlineMode) client.publish(client_water, String(waterLevelNew).c_str(), true); 
+    waterLevelOld = waterLevelNew; 
+  }
 }
 #endif
 
 #ifdef soilHumidityPin
 void soilHumidity() {
   static int soilLevelOld = -100; int soilLevelNew = analogRead(soilHumidityPin);
-  if (abs(soilLevelNew - soilLevelOld) > 50) { if (!offlineMode) client.publish(client_soil, String(soilLevelNew).c_str()); soilLevelOld = soilLevelNew; }
+  if (abs(soilLevelNew - soilLevelOld) > 50) { 
+    if (!offlineMode) client.publish(client_soil, String(soilLevelNew).c_str(), true); 
+    soilLevelOld = soilLevelNew; 
+  }
 }
 #endif
 
@@ -1331,7 +1358,7 @@ String rfid() {
   storedUID = mfrc522.uid; String rfidMsg = "";
   for (byte i = 0; i < storedUID.size; ++i) { rfidMsg += (storedUID.uidByte[i] < 0x10 ? "0" : ""); rfidMsg += String(storedUID.uidByte[i], HEX); }
   rfidMsg.toUpperCase(); mfrc522.PICC_HaltA(); 
-  if (!offlineMode && !isConfigMode) client.publish(client_rfid, (char*)rfidMsg.c_str()); 
+  if (!offlineMode && !isConfigMode) client.publish(client_rfid, (char*)rfidMsg.c_str(), true); 
   return rfidMsg;
 }
 #endif

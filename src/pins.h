@@ -7,7 +7,7 @@
 #define motionPin 14
 #define pushbutton1Pin 16
 #define pushbutton2Pin 27
-#define touchPin 34
+#define touchPin 33 // This has to be certain pins that have the power to do what the touch sensor does......
 #define gasPin 23
 #define LEDPin 12
 #define buzzerPin 25
