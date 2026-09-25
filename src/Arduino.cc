@@ -10,7 +10,6 @@
 #include "xht11.h"          
 #include <SPI.h>
 
-// --- KEYESTUDIO OFFICIAL LIBRARY INCLUDES ---
 #include <MFRC522_I2C.h> 
 
 #include <Adafruit_NeoPixel.h>
@@ -24,13 +23,14 @@ int value = 0;
 int homeNumber = 0; 
 const char* ssid = "IT4Project";  
 const char* password = "IOT12345";
-const char* mqtt_server = "192.168.10.2";
+
+const char* mqtt_server = "192.168.10.2"; 
 
 #define SMARTHOME
 
 char ssid_config[32];
 char pass_config[32];
-char mqtt_server_config[40];  
+char mqtt_server_config[100];  
 
 const char* wifi_ssid = nullptr;
 const char* wifi_pass = nullptr;
@@ -57,7 +57,6 @@ String knownFobs[MAX_FOBS];
 Servo Dservo;
 Servo Wservo;
 
-// GLOBAL BUZZER OBJECT (Fixes PWM timer exhaustion)
 #ifdef buzzerPin
 Buzzer globalBuzz(buzzerPin);
 #endif
@@ -67,7 +66,7 @@ bool ledIsOn = false;
 bool doorIsOpen = false;
 bool windowIsOpen = false;
 bool stripIsOn = false;
-bool touchIsOn = false; // <-- GLOBAL VARIABLE FOR TOUCH
+bool touchIsOn = false; 
 
 bool offlineMode = false;
 bool isConfigMode = false; 
@@ -120,17 +119,45 @@ MFRC522::Uid storedUID;
 
 #ifdef dht11PIN
 xht11 xht(dht11PIN);
+unsigned char dht[4] = { 0, 0, 0, 0 };  
+volatile bool dhtNewData = false;
+
+// DUAL CORE THREADING: Run the blocking DHT sensor on Core 1
+void dhtTask(void *pvParameters) {
+  for (;;) {
+    if (xht.receive(dht)) {
+      lastTemp = dht[2] + dht[3] / 10.0; 
+      lastHum = dht[0] + dht[1] / 10.0;
+      dhtNewData = true; 
+    }
+    vTaskDelay(2500 / portTICK_PERIOD_MS); 
+  }
+}
 #endif
 
-unsigned char dht[4] = { 0, 0, 0, 0 };  
 WebServer server(80); 
-WiFiClient esp32Client;
+WiFiClient esp32Client; 
 PubSubClient client(esp32Client);
 
 bool reset = false;
 int neighborhood;
 int home;
 char bruh[50];
+
+// Non-blocking states
+bool mqttSyncPending = false;
+int mqttSyncStep = 0;
+unsigned long lastMqttSyncTime = 0;
+
+int currentLedMode = 0;
+unsigned long lastLedUpdate = 0;
+int ledStep = 0;
+long ledFirstPixelHue = 0;
+int ledB = 0;
+
+bool fanIsKicking = false;
+unsigned long fanKickStartTime = 0;
+int fanTargetSpeed = 0;
 
 void updateLcdWebserver();
 void setupWebHandlers();
@@ -147,16 +174,8 @@ void executeAction(String target, String mode, String extra);
 void executeInverseAction(String target, String mode, String extra);
 void stripOff();
 void evaluateRules(String event = "");
+void handleLedAnimations();
 
-#ifdef LEDStripPin
-void colorWipe(uint32_t color, int wait);
-void rainbow(int wait);
-void theaterChaseRainbow(int wait);
-#endif
-
-#ifdef dht11PIN
-void temperature_humidity();
-#endif
 #ifdef motionPin
 void motion();
 #endif
@@ -242,21 +261,20 @@ void startConfigMode() {
   apPassStr = preferences.getString("ap_pass", "");
   int ap_uptime = preferences.getInt("ap_uptime", 0);
 
-  // If no credentials exist, OR if 30 minutes of config uptime has elapsed, generate new ones
   if (apNameStr == "" || apPassStr == "" || ap_uptime >= 30) {
     uint16_t entropyName = esp_random() & 0xFFFF;
-    uint32_t entropyPass = esp_random(); 
+    uint32_t passNum = esp_random() % 100000000; 
 
     apNameStr = "CONFIG_" + String(entropyName, HEX);
     apNameStr.toUpperCase();
-    apPassStr = String(entropyPass, HEX);
-    apPassStr.toUpperCase();
-    while(apPassStr.length() < 8) apPassStr += "0";
+    
+    char passBuf[10];
+    sprintf(passBuf, "%08d", passNum);
+    apPassStr = String(passBuf);
 
-    // Save to preferences so it survives reboots
     preferences.putString("ap_ssid", apNameStr);
     preferences.putString("ap_pass", apPassStr);
-    preferences.putInt("ap_uptime", 0); // Reset timer
+    preferences.putInt("ap_uptime", 0); 
   }
 
   WiFi.disconnect(true);
@@ -276,13 +294,11 @@ void startConfigMode() {
 void setup() {
   Serial.begin(115200);
   
-  // EXPLICITLY ALLOCATE TIMERS (Prevents buzzer/analogWrite from stealing servo channels)
   ESP32PWM::allocateTimer(2);
   ESP32PWM::allocateTimer(3);
 
   preferences.begin("smarthome", false);
   
-  // --- LOAD NETWORK PREFERENCES EARLY SO THEY APPEAR IN CONFIG UI ---
   String storedSSID  = preferences.getString("wifi_ssid", ssid);
   String storedPASS  = preferences.getString("wifi_pass", password);
   storedSSID.toCharArray(ssid_config, 32);
@@ -323,6 +339,17 @@ void setup() {
   mfrc522.PCD_Init();
 #endif
 
+#ifdef dht11PIN
+  xTaskCreatePinnedToCore(
+      dhtTask,       
+      "DHT_Task",    
+      4096,          
+      NULL,          
+      1,             
+      NULL,          
+      1);            
+#endif
+
 #ifdef LEDStripPin
   strip.begin(); 
   strip.show(); 
@@ -344,13 +371,12 @@ void setup() {
   pinMode(pushbutton1Pin, INPUT_PULLUP);
 #endif
 #ifdef pushbutton2Pin
-  //pinMode(pushbutton2Pin, INPUT_PULLUP); // last line changed WIP 
+  pinMode(pushbutton2Pin, INPUT_PULLUP);
 #endif
 #ifdef touchPin
   pinMode(touchPin, INPUT);
 #endif
 #ifdef fanPin1
-  // Pushed frequency to 20,000 Hz (Ultrasonic) so human ears cannot hear the motor coil whining
   ledcSetup(10, 20000, 8); 
   ledcAttachPin(fanPin1, 10);
 #endif
@@ -361,7 +387,6 @@ void setup() {
   reset = preferences.getBool("reset", false);
   delay(500); 
 
-  // --- UPDATED BOOT SCREEN: OFFLINE AND CONFIG OPTIONS ---
   mylcd.clear();
   mylcd.setCursor(0, 0); mylcd.print("Both Btns:Config");
   mylcd.setCursor(0, 1); mylcd.print("Btn 2:Offline 3s");
@@ -386,7 +411,6 @@ void setup() {
     delay(50);
   }
 
-  // Evaluate if Offline was triggered
   if (offlineMode && !isConfigMode) {
     WiFi.disconnect(true);
     WiFi.mode(WIFI_OFF);
@@ -396,7 +420,6 @@ void setup() {
     delay(1000);
   }
 
-  // Jump into AP mode if unconfigured or config manually triggered
   if ((!reset || isConfigMode) && !offlineMode) {
     isConfigMode = true;
     startConfigMode();
@@ -423,12 +446,15 @@ void setup() {
   neighborhood = preferences.getInt("neighborhood", 0);
   home = preferences.getInt("home", 0);
   
-  // Only connect to MQTT if we are fully online
   if (!offlineMode && !isConfigMode) {
     String storedMQTT = preferences.getString("mqtt_ip", mqtt_server);
-    storedMQTT.toCharArray(mqtt_server_config, 40);
-    client.setServer(mqtt_server_config, 1883);
+    storedMQTT.toCharArray(mqtt_server_config, 100);
+    client.setServer(mqtt_server_config, 1883); 
     client.setCallback(callback);
+    
+    client.setBufferSize(1024);    
+    client.setKeepAlive(60);       
+    // Removed client.setSocketTimeout(2) to prevent overly strict connection aborts
   }
 
   char mqttnamespace[100]; 
@@ -458,52 +484,46 @@ void setup() {
 
   if (!offlineMode && !isConfigMode) {
     int attempts = 0;
-    while (!client.connected() && attempts < 5) {
+    while (!client.connected() && attempts < 2) { 
       reconnect();
-      delay(1000);
+      delay(100); 
       attempts++;
     }
   }
-  delay(500);
+  delay(100);
   if (!isConfigMode) updateLCD();
 }
 
 void loop() {
-  static long lastMsg = 0;
-  
   if ((isConfigMode || !reset) && !offlineMode) {
     dnsServer.processNextRequest(); 
     updateLcdWebserver();
     server.handleClient(); 
     
-    // --- 30 MINUTE LIVE ROTATION TIMER ---
     static unsigned long lastMinuteCheck = millis();
-    if (millis() - lastMinuteCheck >= 60000) { // Check every 1 minute
+    if (millis() - lastMinuteCheck >= 60000) { 
       lastMinuteCheck = millis();
-      int ap_uptime = preferences.getInt("ap_uptime", 0) + 1; // Increment uptime
+      int ap_uptime = preferences.getInt("ap_uptime", 0) + 1; 
       
-      if (ap_uptime >= 30) { // 30 minutes reached!
+      if (ap_uptime >= 30) { 
         uint16_t entropyName = esp_random() & 0xFFFF;
-        uint32_t entropyPass = esp_random(); 
+        uint32_t passNum = esp_random() % 100000000; 
 
         apNameStr = "CONFIG_" + String(entropyName, HEX);
         apNameStr.toUpperCase();
-        apPassStr = String(entropyPass, HEX);
-        apPassStr.toUpperCase();
-        while(apPassStr.length() < 8) apPassStr += "0";
+        
+        char passBuf[10];
+        sprintf(passBuf, "%08d", passNum);
+        apPassStr = String(passBuf);
 
-        // Save new credentials
         preferences.putString("ap_ssid", apNameStr);
         preferences.putString("ap_pass", apPassStr);
-        preferences.putInt("ap_uptime", 0); // Reset timer
+        preferences.putInt("ap_uptime", 0); 
 
-        // Apply immediately without rebooting
         WiFi.softAP(apNameStr.c_str(), apPassStr.c_str(), 6);
-        
-        // Force the LCD to clear and re-render the new credentials
         mylcd.clear();
       } else {
-        preferences.putInt("ap_uptime", ap_uptime); // Save current uptime
+        preferences.putInt("ap_uptime", ap_uptime);
       }
     }
 
@@ -511,7 +531,6 @@ void loop() {
     return;
   }
   
-  // --- WIFI DROP DETECTION & RECOVERY ---
   if (!offlineMode && !isConfigMode && WiFi.status() != WL_CONNECTED) {
     mylcd.clear();
     mylcd.setCursor(0, 0); mylcd.print("WiFi Dropped!");
@@ -519,43 +538,98 @@ void loop() {
     
     WiFi.disconnect();
     if (connectWiFi(15)) {
-      // Reconnected successfully!
       mylcd.clear();
       mylcd.setCursor(0, 0); mylcd.print("Reconnected!");
       delay(1000);
       updateLCD();
     } else {
-      // Failed to reconnect, trigger the failure options
       handleWiFiFailure();
-      return; // Route back to the top of the loop to process Offline or Config choice
+      return; 
     }
   }
 
   if (!offlineMode) {
     if (!client.connected()) {
       static unsigned long lastMqttRetry = 0;
-      if (millis() - lastMqttRetry > 5000) {
-        lastMqttRetry = millis();
-        reconnect();
+      if (millis() - lastMqttRetry > 15000) {
+        reconnect(); 
+        lastMqttRetry = millis(); 
         if (client.connected()) updateLCD();
       }
     } else {
       client.loop(); 
+      
+      // Staggered MQTT Sync - Published without the 'true' retained flag
+      if (mqttSyncPending && (millis() - lastMqttSyncTime > 150)) {
+        lastMqttSyncTime = millis();
+        switch(mqttSyncStep) {
+          case 0: client.publish(control1, "null"); break;
+          case 1: client.publish(control2, "null"); break;
+          case 2: client.publish(control3, "null"); break;
+          case 3: client.publish(control4, "null"); break;
+          case 4: client.publish(control5, "null"); break;
+          case 5: client.publish(LEDcolorStrip, "0"); break;
+#ifdef motionPin
+          case 6: client.publish(client_motion, String(digitalRead(motionPin)).c_str()); break;
+#endif
+#ifdef gasPin
+          case 7: client.publish(client_gas, String(digitalRead(gasPin)).c_str()); break;
+#endif
+#ifdef pushbutton1Pin
+          case 8: client.publish(client_pushbutton1, String(digitalRead(pushbutton1Pin)).c_str()); break;
+#endif
+#ifdef pushbutton2Pin
+          case 9: client.publish(client_pushbutton2, String(digitalRead(pushbutton2Pin)).c_str()); break;
+#endif
+#ifdef waterLevelPin
+          case 10: client.publish(client_water, String(analogRead(waterLevelPin)).c_str()); break;
+#endif
+#ifdef soilHumidityPin
+          case 11: client.publish(client_soil, String(analogRead(soilHumidityPin)).c_str()); break;
+#endif
+#ifdef touchPin
+          case 12: client.publish(client_touch, "65"); break;
+#endif
+        }
+        mqttSyncStep++;
+        if (mqttSyncStep > 13) mqttSyncPending = false;
+      }
     }
   }
 
   long now = millis();
-  if (now - lastMsg > 1000) { 
-    lastMsg = now;
+  
+  // 1-Second Timer for Counters & LCD
+  static unsigned long lastCountTime = 0;
+  if (now - lastCountTime > 1000) { 
+    lastCountTime = now;
     count();  
-#ifdef dht11PIN
-    temperature_humidity();  
-#endif
     updateLCD(); 
     evaluateRules(""); 
   }
 
-  // --- FAST POLLING SENSORS ---
+  // DHT Data Publisher (triggered remotely from background task)
+#ifdef dht11PIN
+  if (dhtNewData) {
+    dhtNewData = false;
+    if (!offlineMode && client.connected()) {
+      client.publish(client_temperature, String(lastTemp).c_str()); 
+      client.publish(client_humidity, String(lastHum).c_str()); 
+    }
+  }
+#endif
+
+  // Non-blocking fan delay handler
+#ifdef fanPin1
+  if (fanIsKicking && millis() - fanKickStartTime >= 20) {
+    ledcWrite(10, fanTargetSpeed);
+    fanIsKicking = false;
+  }
+#endif
+
+  // Handle non-blocking LED animations
+  handleLedAnimations();
+
 #ifdef touchPin
   touch(); 
 #endif
@@ -582,13 +656,12 @@ void loop() {
   }
 #endif
 
-  // --- BUTTON EVENTS ---
 #ifdef pushbutton1Pin
   static bool pb1Old = 1;
   static unsigned long pb1Db = 0;
   bool pb1New = digitalRead(pushbutton1Pin);
-  if (pb1Old != pb1New && (millis() - pb1Db > 50)) {
-    if (!offlineMode) client.publish(client_pushbutton1, pb1New ? "1" : "0", true); 
+  if (pb1Old != pb1New && (millis() - pb1Db > 100)) {
+    if (!offlineMode) client.publish(client_pushbutton1, pb1New ? "1" : "0"); 
     pb1Old = pb1New;
     pb1Db = millis();
   }
@@ -598,14 +671,13 @@ void loop() {
   static bool pb2Old = 1;
   static unsigned long pb2Db = 0;
   bool pb2New = digitalRead(pushbutton2Pin);
-  if (pb2Old != pb2New && (millis() - pb2Db > 50)) {
-    if (!offlineMode) client.publish(client_pushbutton2, pb2New ? "1" : "0", true); 
+  if (pb2Old != pb2New && (millis() - pb2Db > 100)) {
+    if (!offlineMode) client.publish(client_pushbutton2, pb2New ? "1" : "0"); 
     pb2Old = pb2New;
     pb2Db = millis();
   }
 #endif
 
-  // Process advanced button events for local rules (taps/holds)
   String e1 = btn1.update();
   if (e1 != "") {
     totalButtonPresses++;
@@ -740,7 +812,6 @@ void applyCustomColors(String hexColors) {
     String colorStr = colors[i % 4]; 
     if (colorStr.startsWith("#")) {
       long rgb = strtol(colorStr.substring(1).c_str(), NULL, 16);
-      // Scale RGB values by the requested brightness mathematically to preserve global strip state
       int r = ((rgb >> 16) & 0xFF) * brightness / 255;
       int g = ((rgb >> 8) & 0xFF) * brightness / 255;
       int b = (rgb & 0xFF) * brightness / 255;
@@ -753,6 +824,7 @@ void applyCustomColors(String hexColors) {
 
 void stripOff() {
 #ifdef LEDStripPin
+  currentLedMode = 0; // Stop non-blocking animations
   for (int i = 0; i < strip.numPixels(); i++) strip.setPixelColor(i, strip.Color(0, 0, 0));
   strip.show();
 #endif
@@ -778,12 +850,17 @@ void executeAction(String target, String mode, String extra) {
       fanIsOn = wantFan;
 #ifdef fanPin1
       if (fanIsOn) {
-        // "Kick-Start" logic: 100% power for 20ms to break static friction
         ledcWrite(10, 255);
-        if (speed < 255) delay(20); 
-        ledcWrite(10, speed);
+        if (speed < 255) {
+          fanKickStartTime = millis();
+          fanTargetSpeed = speed;
+          fanIsKicking = true;
+        } else {
+          ledcWrite(10, speed);
+        }
       } else {
         ledcWrite(10, 0); 
+        fanIsKicking = false;
       }
       digitalWrite(fanPin2, LOW);
 #endif
@@ -829,25 +906,35 @@ void executeAction(String target, String mode, String extra) {
 }
 
 void updateLCD() {
-  auto getDisplayString = [](int opt, int length) {
-    String s = "";
-    if (opt == 0) {
-      if (offlineMode) s = "Offline "; else s = String(bruh) + " ";
-      int d = value / 86400; int h = (value % 86400) / 3600; int m = (value % 3600) / 60; int sec = value % 60;
-      char buf[20]; sprintf(buf, "%d:%02d:%02d:%02d", d, h, m, sec);
-      s += String(buf);
-    }
-    else if (opt == 1) s = String(lastTemp, 1) + "C";
-    else if (opt == 2) s = String(lastHum, 1) + "%";
-    else if (opt == 3) s = String(totalButtonPresses);
-    else if (opt == 4) s = String(value);
-    
-    while (s.length() < length) s += " ";
-    return s.substring(0, length);
-  };
-  mylcd.setCursor(0, 0); mylcd.print(getDisplayString(lcdTop, 16));
-  mylcd.setCursor(0, 1); mylcd.print(getDisplayString(lcdBL, 8));
-  mylcd.setCursor(8, 1); mylcd.print(getDisplayString(lcdBR, 8));
+  int y = value / 31536000;
+  int mo = (value % 31536000) / 2592000;
+  int d = (value % 2592000) / 86400;
+  int h = (value % 86400) / 3600;
+  int m = (value % 3600) / 60;
+  int sec = value % 60;
+
+  char topBuf[20];
+  snprintf(topBuf, sizeof(topBuf), "%d:%02d:%02d:%02d:%02d:%02d", y, mo, d, h, m, sec);
+  
+  String topStr = String(topBuf);
+  while (topStr.length() < 16) topStr += " ";
+
+  mylcd.setCursor(0, 0); 
+  mylcd.print(topStr.substring(0, 16));
+
+  String botStr = String(bruh) + " " + String(lastTemp, 1) + "C";
+  
+  while(botStr.length() < 13) botStr += " "; 
+  
+  if (offlineMode) {
+    if (botStr.length() > 13) botStr = botStr.substring(0, 13); 
+    botStr += "Off";
+  }
+  
+  while(botStr.length() < 16) botStr += " "; 
+  
+  mylcd.setCursor(0, 1); 
+  mylcd.print(botStr.substring(0, 16));
 }
 
 void updateLcdWebserver() {
@@ -870,8 +957,13 @@ void updateLcdWebserver() {
 }
 
 void setupWebHandlers() {
+  
   server.on("/", []() {
     server.sendHeader("Connection", "close"); 
+    
+    server.sendHeader("Cache-Control", "no-cache, no-store, must-revalidate");
+    server.sendHeader("Pragma", "no-cache");
+    server.sendHeader("Expires", "-1");
     
     if (server.hasArg("default")) {
       preferences.putBool("reset", false); 
@@ -880,32 +972,60 @@ void setupWebHandlers() {
       delay(1000); ESP.restart(); return;
     }
 
-    if (server.hasArg("reset")) {
-      int nh = server.arg("neighborhood").toInt(); int hm = server.arg("home").toInt();
-      if(nh < 1) nh = 1; if(nh > 100) nh = 100; if(hm < 1) hm = 1; if(hm > 100) hm = 100;
-      preferences.putBool("reset", true);
-      preferences.putInt("neighborhood", nh); preferences.putInt("home", hm);
+    if (server.hasArg("action")) {
+      String act = server.arg("action");
+      
+      int nh = server.arg("neighborhood").toInt(); 
+      int hm = server.arg("home").toInt();
+      // WIP COMM HERE
+      if(nh < 0) nh = 0; if(nh > 100) nh = 100; 
+      if(hm < 0) hm = 0; if(hm > 100) hm = 100;
+      
+      preferences.putInt("neighborhood", nh); 
+      preferences.putInt("home", hm);
       preferences.putString("mqtt_ip", server.arg("mqttip"));
-      preferences.putString("wifi_ssid", server.arg("wifissid")); preferences.putString("wifi_pass", server.arg("wifipass"));
-      server.send(200, "text/html", "<html><body><h2>Settings Saved. Rebooting...</h2></body></html>");
-      delay(1000); ESP.restart(); return;
+      preferences.putString("wifi_ssid", server.arg("wifissid")); 
+      preferences.putString("wifi_pass", server.arg("wifipass"));
+      
+      if (act == "rules") {
+        server.sendHeader("Location", "/rules");
+        server.send(302, "text/plain", "");
+        return;
+      } else if (act == "fobs") {
+        server.sendHeader("Location", "/fobs");
+        server.send(302, "text/plain", "");
+        return;
+      } else if (act == "finalize") {
+        preferences.putBool("reset", true);
+        preferences.end();
+        server.send(200, "text/html", "<html><body><h2>Settings Saved. Rebooting...</h2></body></html>");
+        delay(1000); ESP.restart(); return;
+      }
     }
 
+    // WIP COMM HERE
     int storedNeighborhood = preferences.getInt("neighborhood", 0);
     int storedHome = preferences.getInt("home", 0);
     String storedMQTT = preferences.getString("mqtt_ip", mqtt_server);
 
     String page = "<!DOCTYPE html><html><head><meta name='viewport' content='width=device-width, initial-scale=1'><title>Config</title><style>body{font-size:18px; font-family:Arial; padding:10px;} input,button{font-size:18px; padding:6px; margin:5px 0;} h2{font-size:24px;}</style></head><body>";
     page += "<h2>Smart Home Network Configuration</h2><form method='get' action='/'>";
+    
+    // WIP COMM HERE
     page += "Neighborhood (0-100): <br><input type='number' name='neighborhood' value='" + String(storedNeighborhood) + "' min='0' max='100'><br>";
+    
+    // WIP COMM HERE
     page += "Home Number (0-100): <br><input type='number' name='home' value='" + String(storedHome) + "' min='0' max='100'><br>";
+    
     page += "MQTT IP: <br><input type='text' name='mqttip' value='" + String(storedMQTT) + "'><br>";
     page += "WiFi SSID: <br><input type='text' name='wifissid' value='" + String(ssid_config) + "'><br>";
     page += "WiFi Pass: <br><input type='text' name='wifipass' value='" + String(pass_config) + "'><br><br>";
-    page += "<input type='submit' name='reset' value='Finalize and Reset ESP32' style='background:#4CAF50; color:white; border:none; padding:10px; cursor:pointer;'></form><br>";
-    page += "<form method='get' action='/'><input type='submit' name='default' value='Reset to Defaults'></form><br><hr><br>";
-    page += "<a href='/rules'><button type='button'>Go to Sandbox / Rules Config</button></a><br><br>";
-    page += "<a href='/fobs'><button type='button' style='background:#2196F3; color:white; border:none; padding:10px;'>Manage Key Fobs</button></a></body></html>";
+    
+    page += "<button type='submit' name='action' value='finalize' style='background:#4CAF50; color:white; border:none; padding:10px; cursor:pointer;'>Finalize and Reset ESP32</button><br><br><hr><br>";
+    page += "<button type='submit' name='action' value='rules' style='padding:10px; cursor:pointer;'>Go to Sandbox / Rules Config</button><br><br>";
+    page += "<button type='submit' name='action' value='fobs' style='background:#2196F3; color:white; border:none; padding:10px; cursor:pointer;'>Manage Key Fobs</button></form><br>";
+    
+    page += "<form method='get' action='/'><input type='submit' name='default' value='Reset to Defaults' style='padding:6px; cursor:pointer;'></form></body></html>";
     server.send(200, "text/html", page);
   });
 
@@ -969,6 +1089,41 @@ void setupWebHandlers() {
   server.on("/rules", []() {
     server.sendHeader("Connection", "close"); 
     
+    // --- NEW LOGIC: Instantly create and save a default rule ---
+    if (server.hasArg("id") && server.arg("id") == "new") {
+      int newId = -1;
+      for(int i=0; i<MAX_RULES; i++) {
+        if (smartHomeRules[i].source == "none") { newId = i; break; }
+      }
+      if (newId != -1) {
+        // Claim the slot with default settings so it is permanently occupied
+        smartHomeRules[newId].source = "btn1"; 
+        smartHomeRules[newId].op = "=="; 
+        smartHomeRules[newId].value = "tap";
+        
+        for(int a=0; a<3; a++) { 
+           smartHomeRules[newId].action[a] = "none"; 
+           smartHomeRules[newId].mode[a] = "toggle"; 
+           smartHomeRules[newId].extra[a] = "#FFFFFF,#FFFFFF,#FFFFFF,#FFFFFF,255"; 
+           smartHomeRules[newId].alternate[a] = false; 
+           
+           // Save defaults to flash storage
+           preferences.putString(("a" + String(newId) + "_" + String(a)).c_str(), "none");
+           preferences.putString(("m" + String(newId) + "_" + String(a)).c_str(), "toggle");
+           preferences.putString(("ext" + String(newId) + "_" + String(a)).c_str(), "#FFFFFF,#FFFFFF,#FFFFFF,#FFFFFF,255");
+           preferences.putBool(("alt" + String(newId) + "_" + String(a)).c_str(), false);
+        }
+        preferences.putString(("src" + String(newId)).c_str(), "btn1");
+        preferences.putString(("op" + String(newId)).c_str(), "==");
+        preferences.putString(("val" + String(newId)).c_str(), "tap");
+
+        // Redirect seamlessly to edit the newly created rule
+        server.sendHeader("Location", "/rules?id=" + String(newId)); 
+        server.send(302, "text/plain", "");
+        return;
+      }
+    }
+
     int editId = server.hasArg("id") ? server.arg("id").toInt() : 0;
     if (editId < 0) editId = 0; if (editId >= MAX_RULES) editId = MAX_RULES - 1;
 
@@ -1014,16 +1169,11 @@ void setupWebHandlers() {
             "  var modSel = document.getElementById('modeSel_' + idx);"
             "  var ledDiv = document.getElementById('ledConfig_' + idx);"
             
-            // "  var fanDiv = document.getElementById('fanConfig_' + idx);"
-            
             "  if (act === 'none' || act === 'buzzer') modSel.style.display = 'none';"
             "  else modSel.style.display = 'inline-block';"
             
             "  if(act === 'strip') { if(ledDiv) ledDiv.style.display = 'block'; }"
             "  else { if (ledDiv) ledDiv.style.display = 'none'; }"
-            
-            // "  if(act === 'fan') { if(fanDiv) fanDiv.style.display = 'block'; }"
-            // "  else { if (fanDiv) fanDiv.style.display = 'none'; }"
             
             "  var optOn = modSel.options[1]; var optOff = modSel.options[2];"
             "  if (act === 'window' || act === 'door') { optOn.text = 'Open'; optOff.text = 'Close'; }"
@@ -1033,14 +1183,20 @@ void setupWebHandlers() {
             "</script></head><body><h2>Rule Sandbox Configuration</h2>";
 
     page += "<form method='get' action='/rules'>Select Rule to Edit: <select name='id' onchange='this.form.submit()'>";
-    int firstEmpty = -1;
+    int nextEmpty = -1;
     for(int i=0; i<MAX_RULES; i++){
+      // If the rule has been claimed, show it in the list
       if(smartHomeRules[i].source != "none") {
         page += "<option value='" + String(i) + "'" + (i == editId ? " selected" : "") + ">Rule " + String(i+1) + "</option>";
-      } else if (firstEmpty == -1) firstEmpty = i;
+      } else if (nextEmpty == -1) {
+        nextEmpty = i;
+      }
     }
-    if (firstEmpty != -1 && smartHomeRules[editId].source == "none") page += "<option value='" + String(editId) + "' selected>+ New Rule (Slot " + String(editId+1) + ")</option>";
-    else if (firstEmpty != -1) page += "<option value='" + String(firstEmpty) + "'>+ Add New Rule</option>";
+    
+    // Pass 'new' to trigger the background creation logic above
+    if (nextEmpty != -1) {
+      page += "<option value='new'>+ Add New Rule</option>";
+    }
     page += "</select></form><hr>";
 
     auto getOpt = [](String val, String label, String savedVal) { return "<option value='" + val + "'" + (savedVal == val ? " selected" : "") + ">" + label + "</option>"; };
@@ -1090,7 +1246,6 @@ void setupWebHandlers() {
         String hexColor = smartHomeRules[editId].extra[a];
         String colors[4] = {"#FFFFFF", "#FFFFFF", "#FFFFFF", "#FFFFFF"};
         String stripBright = "255";
-        // String fanSpeed = "255";
 
         if (smartHomeRules[editId].action[a] == "strip") {
             if (hexColor.indexOf(',') != -1) {
@@ -1108,17 +1263,6 @@ void setupWebHandlers() {
                 colors[0] = hexColor; 
             }
         } 
-        /* else if (smartHomeRules[editId].action[a] == "fan") {
-            if (hexColor != "") fanSpeed = hexColor;
-        } */
-
-        /*
-        page += "<div id='fanConfig_" + String(a) + "' style='display:none; margin-top:5px; margin-bottom:15px; padding:10px; background:#ddd; border-radius:5px;'>";
-        page += "<b>Fan Speed (0-255):</b><br>";
-        page += "<input type='range' name='fanspeed" + String(a) + "' min='0' max='255' value='" + fanSpeed + "' oninput='document.getElementById(\"fsVal_" + String(a) + "\").innerText=this.value;'> ";
-        page += "<span id='fsVal_" + String(a) + "'>" + fanSpeed + "</span>";
-        page += "</div>";
-        */
 
         page += "<div id='ledConfig_" + String(a) + "' style='display:none; margin-top:5px; margin-bottom:15px; padding:10px; background:#ddd; border-radius:5px;'>";
         page += "<b>LED Colors (1-4):</b><br>";
@@ -1171,13 +1315,7 @@ void setupWebHandlers() {
               String sb = server.arg("stripbright" + String(a));
               if(sb == "") sb = "255";
               smartHomeRules[idx].extra[a] = c1 + "," + c2 + "," + c3 + "," + c4 + "," + sb;
-            } 
-            /* else if (smartHomeRules[idx].action[a] == "fan") {
-              String fs = server.arg("fanspeed" + String(a));
-              if(fs == "") fs = "255";
-              smartHomeRules[idx].extra[a] = fs;
-            } */ 
-            else {
+            } else {
               smartHomeRules[idx].extra[a] = "";
             }
             
@@ -1246,55 +1384,27 @@ void handleWiFiFailure() {
 #endif
 }
 
-// FORCE IGNITION TO GENERATE TAGS USING RETAINED MESSAGES (true)
 void reconnect() { 
-  if (client.connect(("home" + String(homeNumber)).c_str())) {
+  // RESTORED: Exact strict Client ID so Ignition populates the website correctly
+  String clientId = "home" + String(homeNumber);
+  
+  if (client.connect(clientId.c_str())) {
     client.subscribe(client_subscribe_all); 
     
-    // THE OLD CODE SECRET: Wait 500ms for Ignition to fully open the session 
-    // before we blast it with a dozen messages.
-    delay(500);
-    
-    // 1. Force Ignition to generate Control tags
-    client.publish(control1, "null", true);
-    client.publish(control2, "null", true);
-    client.publish(control3, "null", true);
-    client.publish(control4, "null", true);
-    client.publish(control5, "null", true);
-    client.publish(LEDcolorStrip, "0", true);
-
-    // 2. Force Ignition to generate Sensor tags 
-#ifdef motionPin
-    client.publish(client_motion, String(digitalRead(motionPin)).c_str(), true);
-#endif
-#ifdef gasPin
-    client.publish(client_gas, String(digitalRead(gasPin)).c_str(), true);
-#endif
-#ifdef pushbutton1Pin
-    client.publish(client_pushbutton1, String(digitalRead(pushbutton1Pin)).c_str(), true);
-#endif
-#ifdef pushbutton2Pin
-    client.publish(client_pushbutton2, String(digitalRead(pushbutton2Pin)).c_str(), true);
-#endif
-#ifdef waterLevelPin
-    client.publish(client_water, String(analogRead(waterLevelPin)).c_str(), true);
-#endif
-#ifdef soilHumidityPin
-    client.publish(client_soil, String(analogRead(soilHumidityPin)).c_str(), true);
-#endif
-#ifdef touchPin
-    // Publish a baseline value so the tag generates for the Raspberry Pi
-    client.publish(client_touch, "65", true);
-#endif
+    // Begin staggered publishing of states instead of bulk-sending
+    mqttSyncPending = true;
+    mqttSyncStep = 0;
+    lastMqttSyncTime = millis();
   }
 }
 
 void onClientConnect(WiFiEvent_t event, WiFiEventInfo_t info) { }
 
-// ADDED RETAINED TRUE FLAG TO COUNT
 void count() { 
   value++; 
-  if (!offlineMode) client.publish(client_count, String(value).c_str(), true); 
+  if (!offlineMode) {
+    client.publish(client_count, String(value).c_str()); 
+  }
 }
 
 void callback(char* topic, byte* message, unsigned int length) {
@@ -1334,29 +1444,29 @@ void callback(char* topic, byte* message, unsigned int length) {
   if (String(topic) == LEDcolorStrip) {
 #ifdef LEDStripPin
     int msg = messageTemp.toInt();
-    if (msg == 0) stripOff();
-    else if (msg == 1) colorWipe(strip.Color(255, 0, 0), 50);
-    else if (msg == 2) colorWipe(strip.Color(200, 100, 0), 50);
-    else if (msg == 3) colorWipe(strip.Color(200, 200, 0), 50);
-    else if (msg == 4) colorWipe(strip.Color(0, 255, 0), 50);
-    else if (msg == 5) colorWipe(strip.Color(0, 100, 255), 50);
-    else if (msg == 6) colorWipe(strip.Color(0, 0, 255), 50);
-    else if (msg == 7) colorWipe(strip.Color(100, 0, 255), 50);
-    else if (msg == 8) colorWipe(strip.Color(255, 255, 255), 50);
-    else if (msg == 9) rainbow(10);
-    else if (msg == 10) theaterChaseRainbow(50);
+    if (msg == 0) {
+      stripOff();
+    } else {
+      // Set non-blocking animation state
+      currentLedMode = msg;
+      ledStep = 0;
+      ledFirstPixelHue = 0;
+      ledB = 0;
+      lastLedUpdate = millis();
+    }
 #endif
   }
   if (String(topic) == control5) {
 #ifdef fanPin1    
     float fSpeed = messageTemp.toFloat();
     if (fSpeed > 0) {
-      // Kick-Start logic for MQTT commands
       ledcWrite(10, 255); 
-      delay(20);
-      ledcWrite(10, (fSpeed * 130 + 125)); 
+      fanKickStartTime = millis();
+      fanTargetSpeed = (fSpeed * 130 + 125);
+      fanIsKicking = true;
     } else {
       ledcWrite(10, 0);
+      fanIsKicking = false;
     }
     digitalWrite(fanPin2, LOW); 
     fanIsOn = (fSpeed > 0);
@@ -1366,51 +1476,55 @@ void callback(char* topic, byte* message, unsigned int length) {
 }
 
 #ifdef LEDStripPin
-void colorWipe(uint32_t color, int wait) { 
-  for (int i = 0; i < strip.numPixels(); i++) { 
-    strip.setPixelColor(i, color); 
-    strip.show(); 
-    delay(wait); 
-  } 
-}
+// Non-blocking LED animations executed inside loop()
+void handleLedAnimations() {
+  if (currentLedMode == 0) return;
 
-void rainbow(int wait) {
-  for (long firstPixelHue = 0; firstPixelHue < 5 * 65536; firstPixelHue += 256) {
-    for (int i = 0; i < strip.numPixels(); i++) {
-      int pixelHue = firstPixelHue + (i * 65536L / strip.numPixels());
-      strip.setPixelColor(i, strip.gamma32(strip.ColorHSV(pixelHue)));
-    }
-    strip.show();
-    delay(wait);
-  }
-}
-
-void theaterChaseRainbow(int wait) {
-  int firstPixelHue = 0;     
-  for (int a = 0; a < 30; a++) {   
-    for (int b = 0; b < 3; b++) {  
-      strip.clear();               
-      for (int c = b; c < strip.numPixels(); c += 3) {
-        int hue = firstPixelHue + c * 65536L / strip.numPixels();
-        uint32_t color = strip.gamma32(strip.ColorHSV(hue)); 
-        strip.setPixelColor(c, color);                       
+  if (currentLedMode >= 1 && currentLedMode <= 8) {
+    if (millis() - lastLedUpdate >= 50) {
+      lastLedUpdate = millis();
+      uint32_t color;
+      switch (currentLedMode) {
+        case 1: color = strip.Color(255, 0, 0); break;
+        case 2: color = strip.Color(200, 100, 0); break;
+        case 3: color = strip.Color(200, 200, 0); break;
+        case 4: color = strip.Color(0, 255, 0); break;
+        case 5: color = strip.Color(0, 100, 255); break;
+        case 6: color = strip.Color(0, 0, 255); break;
+        case 7: color = strip.Color(100, 0, 255); break;
+        case 8: color = strip.Color(255, 255, 255); break;
       }
-      strip.show();                 
-      delay(wait);                  
-      firstPixelHue += 65536 / 90;  
+      if (ledStep < strip.numPixels()) {
+        strip.setPixelColor(ledStep, color);
+        strip.show();
+        ledStep++;
+      }
     }
-  }
-}
-#endif
-
-// ADDED RETAINED TRUE FLAG TO TEMP AND HUMIDITY
-#ifdef dht11PIN
-void temperature_humidity() {
-  if (xht.receive(dht)) {                  
-    lastTemp = dht[2] + dht[3] / 10.0; lastHum = dht[0] + dht[1] / 10.0;  
-    if (!offlineMode) { 
-      client.publish(client_temperature, String(lastTemp).c_str(), true); 
-      client.publish(client_humidity, String(lastHum).c_str(), true); 
+  } else if (currentLedMode == 9) { // rainbow
+    if (millis() - lastLedUpdate >= 10) {
+      lastLedUpdate = millis();
+      for (int i = 0; i < strip.numPixels(); i++) {
+        int pixelHue = ledFirstPixelHue + (i * 65536L / strip.numPixels());
+        strip.setPixelColor(i, strip.gamma32(strip.ColorHSV(pixelHue)));
+      }
+      strip.show();
+      ledFirstPixelHue += 256;
+      if (ledFirstPixelHue >= 5 * 65536) ledFirstPixelHue = 0;
+    }
+  } else if (currentLedMode == 10) { // theaterChaseRainbow
+    if (millis() - lastLedUpdate >= 50) {
+      lastLedUpdate = millis();
+      strip.clear();
+      for (int c = ledB; c < strip.numPixels(); c += 3) {
+        int hue = ledFirstPixelHue + c * 65536L / strip.numPixels();
+        strip.setPixelColor(c, strip.gamma32(strip.ColorHSV(hue)));
+      }
+      strip.show();
+      ledB++;
+      if (ledB >= 3) {
+        ledB = 0;
+        ledFirstPixelHue += 65536 / 90;
+      }
     }
   }
 }
@@ -1418,9 +1532,14 @@ void temperature_humidity() {
 
 #ifdef motionPin
 void motion() {
+  // HARD THROTTLE: Max 1 check/publish per 250ms
+  static unsigned long lastCheck = 0;
+  if (millis() - lastCheck < 250) return;
+  lastCheck = millis();
+  
   static bool motionOld = 1; bool motionNew = digitalRead(motionPin);
   if (motionOld != motionNew) { 
-    if (!offlineMode) client.publish(client_motion, String(motionNew).c_str(), true); 
+    if (!offlineMode) client.publish(client_motion, String(motionNew).c_str()); 
     motionOld = motionNew; 
   }
 }
@@ -1428,9 +1547,14 @@ void motion() {
 
 #ifdef gasPin
 void gas() {
+  // HARD THROTTLE: Max 1 check/publish per 500ms
+  static unsigned long lastCheck = 0;
+  if (millis() - lastCheck < 500) return;
+  lastCheck = millis();
+  
   static bool gasOld = 0; bool gasNew = digitalRead(gasPin);
   if (gasOld != gasNew) { 
-    if (!offlineMode) client.publish(client_gas, String(gasNew).c_str(), true); 
+    if (!offlineMode) client.publish(client_gas, String(gasNew).c_str()); 
     gasOld = gasNew; 
   }
 }
@@ -1438,60 +1562,54 @@ void gas() {
 
 #ifdef touchPin
 void touch() {
-  // 1. Poll at 100ms. This is the sweet spot: it still reacts 10x a second 
-  // (feeling instant to us), but gives the pin enough time to actually discharge.
+  // HARD THROTTLE: Max 1 check/publish per 250ms
   static unsigned long lastTouchPoll = 0;
-  if (millis() - lastTouchPoll < 100) return;
+  if (millis() - lastTouchPoll < 250) return;
   lastTouchPoll = millis();
 
-  // Read the raw analog sensor value
   int touchNewRaw = touchRead(touchPin);
   
-  // 2. TIGHTEN THE HYSTERESIS: Catch the *start* of the release, not the end.
-  const int THRESHOLD_ON = 30;  // Drops below 30? ON.
-  const int THRESHOLD_OFF = 60; // Rises past 60? OFF. (Don't wait for it to reach 200!)
+  float fuzzy_touched = 0.0;
+  if (touchNewRaw <= 20) fuzzy_touched = 1.0;
+  else if (touchNewRaw >= 60) fuzzy_touched = 0.0;
+  else fuzzy_touched = (60.0 - touchNewRaw) / 40.0;
   
+  static float touchConfidence = 0.0;
+  touchConfidence = (touchConfidence * 0.6) + (fuzzy_touched * 0.4); 
+
   static bool ruleTouchState = false;
   bool stateChanged = false;
 
-  // Snap ON 
-  if (!ruleTouchState && touchNewRaw < THRESHOLD_ON) {
+  if (!ruleTouchState && touchConfidence > 0.75) {
     ruleTouchState = true;
     stateChanged = true;
   } 
-  // Snap OFF immediately as the value begins to recover past 60
-  else if (ruleTouchState && touchNewRaw > THRESHOLD_OFF) {
+  else if (ruleTouchState && touchConfidence < 0.25) {
     ruleTouchState = false;
     stateChanged = true;
   }
   
-  // If the state snapped open or closed, trigger rules and MQTT instantly
   if (stateChanged) {
     touchIsOn = ruleTouchState;
     evaluateRules(ruleTouchState ? "touch_on" : "touch_off");
     
-    // Push the immediate state change to MQTT so Ignition updates instantly
     if (!offlineMode) {
-      client.publish(client_touch, String(touchNewRaw).c_str(), true);
+      client.publish(client_touch, String(touchNewRaw).c_str());
     }
-  }
-
-  // 3. Publish the raw fluctuating value every 1 second (Matches home7 behavior)
-  static unsigned long lastMqttPublish = 0;
-  if (millis() - lastMqttPublish > 1000) {
-    if (!offlineMode) {
-      client.publish(client_touch, String(touchNewRaw).c_str(), true);
-    }
-    lastMqttPublish = millis();
   }
 }
 #endif
 
 #ifdef waterLevelPin
 void waterLevel() {
-  static int waterLevelOld = -100; int waterLevelNew = analogRead(waterLevelPin);
+  // HARD THROTTLE: Max 1 check/publish per 1000ms
+  static unsigned long lastCheck = 0;
+  if (millis() - lastCheck < 1000) return;
+  lastCheck = millis();
+  
+  static int waterLevelOld = -1000; int waterLevelNew = analogRead(waterLevelPin);
   if (abs(waterLevelNew - waterLevelOld) > 50) { 
-    if (!offlineMode) client.publish(client_water, String(waterLevelNew).c_str(), true); 
+    if (!offlineMode) client.publish(client_water, String(waterLevelNew).c_str()); 
     waterLevelOld = waterLevelNew; 
   }
 }
@@ -1499,9 +1617,14 @@ void waterLevel() {
 
 #ifdef soilHumidityPin
 void soilHumidity() {
-  static int soilLevelOld = -100; int soilLevelNew = analogRead(soilHumidityPin);
+  // HARD THROTTLE: Max 1 check/publish per 1000ms
+  static unsigned long lastCheck = 0;
+  if (millis() - lastCheck < 1000) return;
+  lastCheck = millis();
+  
+  static int soilLevelOld = -1000; int soilLevelNew = analogRead(soilHumidityPin);
   if (abs(soilLevelNew - soilLevelOld) > 50) { 
-    if (!offlineMode) client.publish(client_soil, String(soilLevelNew).c_str(), true); 
+    if (!offlineMode) client.publish(client_soil, String(soilLevelNew).c_str()); 
     soilLevelOld = soilLevelNew; 
   }
 }
@@ -1509,11 +1632,15 @@ void soilHumidity() {
 
 #ifdef RFID
 String rfid() {
+  static unsigned long lastCheck = 0;
+  if (millis() - lastCheck < 500) return "";
+  lastCheck = millis();
+
   if (!mfrc522.PICC_IsNewCardPresent() || !mfrc522.PICC_ReadCardSerial()) return "";
   storedUID = mfrc522.uid; String rfidMsg = "";
   for (byte i = 0; i < storedUID.size; ++i) { rfidMsg += (storedUID.uidByte[i] < 0x10 ? "0" : ""); rfidMsg += String(storedUID.uidByte[i], HEX); }
   rfidMsg.toUpperCase(); mfrc522.PICC_HaltA(); 
-  if (!offlineMode && !isConfigMode) client.publish(client_rfid, (char*)rfidMsg.c_str(), true); 
+  if (!offlineMode && !isConfigMode) client.publish(client_rfid, (char*)rfidMsg.c_str()); 
   return rfidMsg;
 }
 #endif
