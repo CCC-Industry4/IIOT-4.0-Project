@@ -551,10 +551,31 @@ void loop() {
   if (!offlineMode) {
     if (!client.connected()) {
       static unsigned long lastMqttRetry = 0;
-      if (millis() - lastMqttRetry > 15000) {
-        reconnect(); 
+      static bool mqttFailDisplayed = false;
+      if (!mqttFailDisplayed) {
+        mylcd.clear();
+        mylcd.setCursor(0, 0); mylcd.print("MQTT Failed...");
+        mylcd.setCursor(0, 1); mylcd.print("Retrying...");
+        mqttFailDisplayed = true;
+      }
+
+      // Retry every 5 seconds instead of 15 for faster recovery
+      if (millis() - lastMqttRetry > 5000) {
         lastMqttRetry = millis(); 
-        if (client.connected()) updateLCD();
+        
+        // If WiFi dropped, let the WiFi block at the start of loop() handle it
+        if (WiFi.status() != WL_CONNECTED) {
+          mqttFailDisplayed = false;
+        } else {
+          reconnect(); 
+          if (client.connected()) {
+            mqttFailDisplayed = false;
+            mylcd.clear();
+            mylcd.setCursor(0, 0); mylcd.print("MQTT Connected!");
+            delay(1000);
+            updateLCD();
+          }
+        }
       }
     } else {
       client.loop(); 
@@ -921,20 +942,25 @@ void updateLCD() {
 
   mylcd.setCursor(0, 0); 
   mylcd.print(topStr.substring(0, 16));
-
   String botStr = String(bruh) + " " + String(lastTemp, 1) + "C";
   
-  while(botStr.length() < 13) botStr += " "; 
+
+  String rightStr = offlineMode ? "Off" : (String(lastHum,1));
   
-  if (offlineMode) {
-    if (botStr.length() > 13) botStr = botStr.substring(0, 13); 
-    botStr += "Off";
+
+  while(botStr.length() + rightStr.length() < 16) {
+    botStr += " ";
   }
   
-  while(botStr.length() < 16) botStr += " "; 
+
+  if (botStr.length() + rightStr.length() > 16) {
+    botStr = botStr.substring(0, 16 - rightStr.length());
+  }
+  
+  botStr += rightStr;
   
   mylcd.setCursor(0, 1); 
-  mylcd.print(botStr.substring(0, 16));
+  mylcd.print(botStr);
 }
 
 void updateLcdWebserver() {
@@ -1361,16 +1387,30 @@ bool connectWiFi(int timeoutSec) {
 void handleWiFiFailure() {
 #if defined(pushbutton1Pin) && defined(pushbutton2Pin)
   while (true) {
-    mylcd.clear(); mylcd.setCursor(0, 0); mylcd.print("WiFi Failed!");
-    mylcd.setCursor(0, 1); mylcd.print("1:Offln 2:Config");
+    mylcd.clear(); 
+    mylcd.setCursor(0, 0); mylcd.print("WiFi Failed!");
+    mylcd.setCursor(0, 1); mylcd.print("1:Retry 2:Config");
+    
     while (true) {
       if (digitalRead(pushbutton1Pin) == LOW) {
-        delay(200); offlineMode = true; WiFi.disconnect(true); WiFi.mode(WIFI_OFF);
-        mylcd.clear(); mylcd.setCursor(0, 0); mylcd.print("Offline Mode"); mylcd.setCursor(0, 1); mylcd.print("Rules Only");
-        delay(2000); return;
+        delay(200); 
+        mylcd.clear(); 
+        mylcd.setCursor(0, 0); mylcd.print("Retrying WiFi...");
+        
+        if (connectWiFi(15)) {
+           mylcd.clear(); 
+           mylcd.setCursor(0, 0); mylcd.print("Reconnected!");
+           delay(1000);
+           return; // Break out of failure loop and return to normal operation
+        } else {
+           break; // Break inner loop to redraw the "WiFi Failed!" prompt
+        }
       }
+      
       if (digitalRead(pushbutton2Pin) == LOW) {
-        delay(200); mylcd.clear(); mylcd.setCursor(0, 0); mylcd.print("Starting Config.");
+        delay(200); 
+        mylcd.clear(); 
+        mylcd.setCursor(0, 0); mylcd.print("Starting Config.");
         isConfigMode = true;
         offlineMode = false;
         startConfigMode();
