@@ -1684,43 +1684,35 @@ void gas() {
 
 #ifdef touchPin
 void touch() {
-  // HARD THROTTLE: Max 1 check/publish per 250ms
+  // 1. Poll much faster (every 50ms instead of 250ms) to eliminate lag
   static unsigned long lastTouchPoll = 0;
-  if (millis() - lastTouchPoll < 250) return;
+  if (millis() - lastTouchPoll < 50) return;
   lastTouchPoll = millis();
 
   int touchNewRaw = touchRead(touchPin);
-  //Serial.print("Touch Raw: "); // Debugging
-  //Serial.println(touchNewRaw); // Debugging
   
-  float fuzzy_touched = 0.0;
-  // If it drops to 10 or below, it is 100% touched
-  if (touchNewRaw <= 10) fuzzy_touched = 1.0;
-  // If it recovers to 24 or above, it is 0% touched
-  else if (touchNewRaw >= 24) fuzzy_touched = 0.0;
-  // If it's bouncing in between, calculate the percentage
-  else fuzzy_touched = (24.0 - touchNewRaw) / 14.0; 
-  
-  static float touchConfidence = 0.0;
-  touchConfidence = (touchConfidence * 0.6) + (fuzzy_touched * 0.4); 
-
   static bool ruleTouchState = false;
   bool stateChanged = false;
 
-  if (!ruleTouchState && touchConfidence > 0.75) {
+  // 2. Instant Hysteresis (No math smoothing)
+  if (!ruleTouchState && touchNewRaw <= 10) {
+    // Finger ON (Instantly registers when it hits 10 or below)
     ruleTouchState = true;
     stateChanged = true;
   } 
-  else if (ruleTouchState && touchConfidence < 0.25) {
+  else if (ruleTouchState && touchNewRaw >= 15) {
+    // Finger OFF (Instantly registers the moment the capacitance starts recovering past 15)
     ruleTouchState = false;
     stateChanged = true;
   }
   
+  // 3. Only publish to MQTT when the state actually changes
   if (stateChanged) {
     touchIsOn = ruleTouchState;
     evaluateRules(ruleTouchState ? "touch_on" : "touch_off");
     
     if (!offlineMode) {
+      // Publish the raw value so Ignition can see it immediately
       client.publish(client_touch, String(touchNewRaw).c_str());
     }
   }
