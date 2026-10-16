@@ -63,5 +63,5 @@ To install the project, run the following command in Raspberry Pi terminal with 
 ### Training Materials
  - [Industry 4.0 PowerPoint](https://docs.google.com/presentation/d/1RTdsWulPext4mxPflkVPRlp7vQk2u_fBCdiXWWHHBMw/edit?usp=sharing)
 
- - [Smart Home Tutorial PowerPoint](https://myscccd-my.sharepoint.com/:p:/r/personal/1002069_my_scccd_edu/Documents/Smart%20Home%20Tutorial%20Presentation.pptx?d=wcae9fe0e962b46cd8597c64f1692407c&csf=1&web=1&e=zcZzhF) 
+ - [Smart Home Tutorial PowerPoint](https://myscccd-my.sharepoint.com/:p:/g/personal/1002069_my_scccd_edu/IQAO_unKK5bNRoWXxk8WkkB8AaPTrdAkEsCMCjFfHtqGPl8?e=olitgD) 
 ---
