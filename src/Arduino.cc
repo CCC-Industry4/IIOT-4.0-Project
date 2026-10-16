@@ -163,6 +163,7 @@ void updateLcdWebserver();
 void setupWebHandlers();
 bool connectWiFi(int timeoutSec);
 void handleWiFiFailure();
+void handleMqttFailure();
 void reconnect();
 void count();
 void updateLCD();
@@ -389,7 +390,7 @@ void setup() {
 
   mylcd.clear();
   mylcd.setCursor(0, 0); mylcd.print("Both Btns:Config");
-  mylcd.setCursor(0, 1); mylcd.print("Btn 2:Offline 3s");
+  mylcd.setCursor(0, 1); mylcd.print("Btn 2:Offline");
   
   unsigned long bootTime = millis();
   while (millis() - bootTime < 3000) {
@@ -438,13 +439,19 @@ void setup() {
     mylcd.clear();
     mylcd.setCursor(0, 0); mylcd.print("Connecting WiFi");
     
-    if (!connectWiFi(10)) handleWiFiFailure();
-    else WiFi.setSleep(WIFI_PS_NONE);
+    if (!connectWiFi(10)) {
+      handleWiFiFailure();
+    } else {
+      WiFi.setSleep(WIFI_PS_NONE);
+      mylcd.clear();
+      mylcd.setCursor(0, 0); mylcd.print("WiFi connected!");
+      delay(1000);
+    }
   }
 
-  homeNumber = preferences.getInt("home", 0);
-  neighborhood = preferences.getInt("neighborhood", 0);
-  home = preferences.getInt("home", 0);
+  homeNumber = constrain(preferences.getInt("home", 0), 0, 99);
+  neighborhood = constrain(preferences.getInt("neighborhood", 0), 0, 99);
+  home = homeNumber;
   
   if (!offlineMode && !isConfigMode) {
     String storedMQTT = preferences.getString("mqtt_ip", mqtt_server);
@@ -484,11 +491,15 @@ void setup() {
 
   if (!offlineMode && !isConfigMode) {
     int attempts = 0;
+    mylcd.clear();
+    mylcd.setCursor(0, 0); mylcd.print("Attempting MQTT");
+    mylcd.setCursor(0, 1); mylcd.print("connection...");
     while (!client.connected() && attempts < 2) { 
       reconnect();
       delay(100); 
       attempts++;
     }
+    if (!client.connected()) handleMqttFailure();
   }
   delay(100);
   if (!isConfigMode) updateLCD();
@@ -533,8 +544,8 @@ void loop() {
   
   if (!offlineMode && !isConfigMode && WiFi.status() != WL_CONNECTED) {
     mylcd.clear();
-    mylcd.setCursor(0, 0); mylcd.print("WiFi Dropped!");
-    mylcd.setCursor(0, 1); mylcd.print("Retrying 15s...");
+    mylcd.setCursor(0, 0); mylcd.print("WiFi dropped!");
+    mylcd.setCursor(0, 1); mylcd.print("Retrying WiFi");
     
     WiFi.disconnect();
     if (connectWiFi(15)) {
@@ -550,68 +561,46 @@ void loop() {
 
   if (!offlineMode) {
     if (!client.connected()) {
-      static unsigned long lastMqttRetry = 0;
-      static bool mqttFailDisplayed = false;
-      if (!mqttFailDisplayed) {
-        mylcd.clear();
-        mylcd.setCursor(0, 0); mylcd.print("MQTT Failed...");
-        mylcd.setCursor(0, 1); mylcd.print("Retrying...");
-        mqttFailDisplayed = true;
-      }
-
-      // Retry every 5 seconds instead of 15 for faster recovery
-      if (millis() - lastMqttRetry > 5000) {
-        lastMqttRetry = millis(); 
-        
-        // If WiFi dropped, let the WiFi block at the start of loop() handle it
-        if (WiFi.status() != WL_CONNECTED) {
-          mqttFailDisplayed = false;
-        } else {
-          reconnect(); 
-          if (client.connected()) {
-            mqttFailDisplayed = false;
-            mylcd.clear();
-            mylcd.setCursor(0, 0); mylcd.print("MQTT Connected!");
-            delay(1000);
-            updateLCD();
-          }
-        }
-      }
+      handleMqttFailure();
+      if (isConfigMode) return;
+      if (!client.connected()) return;
     } else {
       client.loop(); 
       
       // Staggered MQTT Sync - Published without the 'true' retained flag
       if (mqttSyncPending && (millis() - lastMqttSyncTime > 150)) {
         lastMqttSyncTime = millis();
+        // Staggered MQTT Sync - Published WITH the 'true' retained flag
         switch(mqttSyncStep) {
-          case 0: client.publish(control1, "null"); break;
-          case 1: client.publish(control2, "null"); break;
-          case 2: client.publish(control3, "null"); break;
-          case 3: client.publish(control4, "null"); break;
-          case 4: client.publish(control5, "null"); break;
-          case 5: client.publish(LEDcolorStrip, "0"); break;
+          case 0: client.publish(control1, ledIsOn ? "1" : "0", true); break;
+          case 1: client.publish(control2, doorIsOpen ? "1" : "0", true); break;
+          case 2: client.publish(control3, windowIsOpen ? "1" : "0", true); break;
+          case 3: client.publish(control4, "0", true); break; // Buzzer
+          case 4: client.publish(control5, fanIsOn ? "1" : "0", true); break;
+          case 5: client.publish(LEDcolorStrip, String(currentLedMode).c_str(), true); break;
 #ifdef motionPin
-          case 6: client.publish(client_motion, String(digitalRead(motionPin)).c_str()); break;
+          case 6: client.publish(client_motion, String(digitalRead(motionPin)).c_str(), true); break;
 #endif
 #ifdef gasPin
-          case 7: client.publish(client_gas, String(digitalRead(gasPin)).c_str()); break;
+          case 7: client.publish(client_gas, String(digitalRead(gasPin)).c_str(), true); break;
 #endif
 #ifdef pushbutton1Pin
-          case 8: client.publish(client_pushbutton1, String(digitalRead(pushbutton1Pin)).c_str()); break;
+          case 8: client.publish(client_pushbutton1, String(digitalRead(pushbutton1Pin)).c_str(), true); break;
 #endif
 #ifdef pushbutton2Pin
-          case 9: client.publish(client_pushbutton2, String(digitalRead(pushbutton2Pin)).c_str()); break;
+          case 9: client.publish(client_pushbutton2, String(digitalRead(pushbutton2Pin)).c_str(), true); break;
 #endif
 #ifdef waterLevelPin
-          case 10: client.publish(client_water, String(analogRead(waterLevelPin)).c_str()); break;
+          case 10: client.publish(client_water, String(analogRead(waterLevelPin)).c_str(), true); break;
 #endif
 #ifdef soilHumidityPin
-          case 11: client.publish(client_soil, String(analogRead(soilHumidityPin)).c_str()); break;
+          case 11: client.publish(client_soil, String(analogRead(soilHumidityPin)).c_str(), true); break;
 #endif
 #ifdef touchPin
-          case 12: client.publish(client_touch, "65"); break;
+          case 12: client.publish(client_touch, "65", true); break;
 #endif
         }
+
         mqttSyncStep++;
         if (mqttSyncStep > 13) mqttSyncPending = false;
       }
@@ -908,7 +897,7 @@ void executeAction(String target, String mode, String extra) {
   else if (target == "window") {
     bool wantOpen = toggle ? !windowIsOpen : turnOn;
     if(windowIsOpen != wantOpen) {
-      windowIsOpen = wantOpen;
+    windowIsOpen = wantOpen;
 #ifdef windowServo
       Wservo.write(windowIsOpen ? 165 : 50);
 #endif
@@ -942,22 +931,25 @@ void updateLCD() {
 
   mylcd.setCursor(0, 0); 
   mylcd.print(topStr.substring(0, 16));
-  String botStr = String(bruh) + " " + String(lastTemp, 1) + "C";
-  
+  String idStr = "N" + String(constrain(neighborhood, 0, 99)) +
+                 "/H" + String(constrain(home, 0, 99));
+  String tempStr = offlineMode ? "Off" : (String(lastTemp, 1) + "C");
+  int humiditySpace = 16 - idStr.length() - tempStr.length() - 2;
+  String humidityStr;
+  int humidityValue = constrain((int)lastHum, 0, 99);
 
-  String rightStr = offlineMode ? "Off" : (String(lastHum,1));
-  
-
-  while(botStr.length() + rightStr.length() < 16) {
-    botStr += " ";
+  if (humiditySpace >= 5) {
+    humidityStr = String(lastHum, 1) + "%";
+  } else if (humiditySpace >= 3) {
+    humidityStr = String(humidityValue) + "%";
+  } else if (humiditySpace >= 2) {
+    humidityStr = String(humidityValue);
   }
-  
 
-  if (botStr.length() + rightStr.length() > 16) {
-    botStr = botStr.substring(0, 16 - rightStr.length());
-  }
-  
-  botStr += rightStr;
+  String botStr = idStr + " " + tempStr;
+  if (humidityStr.length() > 0) botStr += " " + humidityStr;
+  while (botStr.length() < 16) botStr += " ";
+  botStr = botStr.substring(0, 16);
   
   mylcd.setCursor(0, 1); 
   mylcd.print(botStr);
@@ -1004,8 +996,8 @@ void setupWebHandlers() {
       int nh = server.arg("neighborhood").toInt(); 
       int hm = server.arg("home").toInt();
       // WIP COMM HERE
-      if(nh < 0) nh = 0; if(nh > 100) nh = 100; 
-      if(hm < 0) hm = 0; if(hm > 100) hm = 100;
+      if(nh < 0) nh = 0; if(nh > 99) nh = 99;
+      if(hm < 0) hm = 0; if(hm > 99) hm = 99;
       
       preferences.putInt("neighborhood", nh); 
       preferences.putInt("home", hm);
@@ -1030,18 +1022,18 @@ void setupWebHandlers() {
     }
 
     // WIP COMM HERE
-    int storedNeighborhood = preferences.getInt("neighborhood", 0);
-    int storedHome = preferences.getInt("home", 0);
+    int storedNeighborhood = constrain(preferences.getInt("neighborhood", 0), 0, 99);
+    int storedHome = constrain(preferences.getInt("home", 0), 0, 99);
     String storedMQTT = preferences.getString("mqtt_ip", mqtt_server);
 
     String page = "<!DOCTYPE html><html><head><meta name='viewport' content='width=device-width, initial-scale=1'><title>Config</title><style>body{font-size:18px; font-family:Arial; padding:10px;} input,button{font-size:18px; padding:6px; margin:5px 0;} h2{font-size:24px;}</style></head><body>";
     page += "<h2>Smart Home Network Configuration</h2><form method='get' action='/'>";
     
     // WIP COMM HERE
-    page += "Neighborhood (0-100): <br><input type='number' name='neighborhood' value='" + String(storedNeighborhood) + "' min='0' max='100'><br>";
+    page += "Neighborhood (0-99): <br><input type='number' name='neighborhood' value='" + String(storedNeighborhood) + "' min='0' max='99'><br>";
     
     // WIP COMM HERE
-    page += "Home Number (0-100): <br><input type='number' name='home' value='" + String(storedHome) + "' min='0' max='100'><br>";
+    page += "Home Number (0-99): <br><input type='number' name='home' value='" + String(storedHome) + "' min='0' max='99'><br>";
     
     page += "MQTT IP: <br><input type='text' name='mqttip' value='" + String(storedMQTT) + "'><br>";
     page += "WiFi SSID: <br><input type='text' name='wifissid' value='" + String(ssid_config) + "'><br>";
@@ -1386,11 +1378,13 @@ bool connectWiFi(int timeoutSec) {
 
 void handleWiFiFailure() {
 #if defined(pushbutton1Pin) && defined(pushbutton2Pin)
+  const unsigned long promptTimeout = 30000;
   while (true) {
     mylcd.clear(); 
     mylcd.setCursor(0, 0); mylcd.print("WiFi Failed!");
     mylcd.setCursor(0, 1); mylcd.print("1:Retry 2:Config");
-    
+
+    unsigned long promptStarted = millis();
     while (true) {
       if (digitalRead(pushbutton1Pin) == LOW) {
         delay(200); 
@@ -1406,15 +1400,34 @@ void handleWiFiFailure() {
            break; // Break inner loop to redraw the "WiFi Failed!" prompt
         }
       }
-      
+
       if (digitalRead(pushbutton2Pin) == LOW) {
         delay(200); 
         mylcd.clear(); 
-        mylcd.setCursor(0, 0); mylcd.print("Starting Config.");
+        mylcd.setCursor(0, 0); mylcd.print("WiFi config mode");
         isConfigMode = true;
         offlineMode = false;
         startConfigMode();
         return; 
+      }
+
+      if (millis() - promptStarted >= promptTimeout) {
+        mylcd.clear();
+        mylcd.setCursor(0, 0); mylcd.print("No input,");
+        mylcd.setCursor(0, 1); mylcd.print("retrying WiFi");
+        delay(1000);
+
+        mylcd.clear();
+        mylcd.setCursor(0, 0); mylcd.print("WiFi retrying");
+        mylcd.setCursor(0, 1); mylcd.print("for 30 seconds");
+        if (connectWiFi(30)) {
+          mylcd.clear();
+          mylcd.setCursor(0, 0); mylcd.print("WiFi connected");
+          delay(1000);
+          updateLCD();
+          return;
+        }
+        break;
       }
       delay(50);
     }
@@ -1424,9 +1437,77 @@ void handleWiFiFailure() {
 #endif
 }
 
+void handleMqttFailure() {
+#if defined(pushbutton1Pin) && defined(pushbutton2Pin)
+  while (!client.connected()) {
+    mylcd.clear();
+    mylcd.setCursor(0, 0); mylcd.print("MQTT failed");
+    mylcd.setCursor(0, 1); mylcd.print("1:Retry 2:Config");
+
+    unsigned long promptStarted = millis();
+    while (!client.connected()) {
+      if (digitalRead(pushbutton1Pin) == LOW) {
+        delay(200);
+        mylcd.clear();
+        mylcd.setCursor(0, 0); mylcd.print("Retrying MQTT");
+        mylcd.setCursor(0, 1); mylcd.print("connection...");
+        reconnect();
+        if (client.connected()) {
+          mylcd.clear();
+          mylcd.setCursor(0, 0); mylcd.print("MQTT Connected!");
+          delay(1000);
+          updateLCD();
+          return;
+        }
+        break;
+      }
+
+      if (digitalRead(pushbutton2Pin) == LOW) {
+        delay(200);
+        mylcd.clear();
+        mylcd.setCursor(0, 0); mylcd.print("MQTT config mode");
+        isConfigMode = true;
+        offlineMode = false;
+        startConfigMode();
+        return;
+      }
+
+      if (millis() - promptStarted >= 30000) {
+        mylcd.clear();
+        mylcd.setCursor(0, 0); mylcd.print("No input");
+        mylcd.setCursor(0, 1); mylcd.print("auto retrying......");
+        delay(1000);
+
+        mylcd.clear();
+        mylcd.setCursor(0, 0); mylcd.print("Retrying MQTT");
+        mylcd.setCursor(0, 1); mylcd.print("connection......");
+        unsigned long retryStarted = millis();
+        while (!client.connected() && millis() - retryStarted < 30000) {
+          reconnect();
+          if (!client.connected()) delay(500);
+        }
+        if (client.connected()) {
+          mylcd.clear();
+          mylcd.setCursor(0, 0); mylcd.print("MQTT connected");
+          delay(1000);
+          updateLCD();
+          return;
+        }
+        break;
+      }
+      delay(50);
+    }
+  }
+#else
+  offlineMode = true;
+  WiFi.disconnect(true);
+  WiFi.mode(WIFI_OFF);
+#endif
+}
+
 void reconnect() { 
-  // RESTORED: Exact strict Client ID so Ignition populates the website correctly
-  String clientId = "home" + String(homeNumber);
+  // Make Client ID unique across all neighborhoods to prevent broker kick-loops
+  String clientId = "N" + String(neighborhood) + "_home" + String(homeNumber);
   
   if (client.connect(clientId.c_str())) {
     client.subscribe(client_subscribe_all); 
@@ -1437,6 +1518,7 @@ void reconnect() {
     lastMqttSyncTime = millis();
   }
 }
+
 
 void onClientConnect(WiFiEvent_t event, WiFiEventInfo_t info) { }
 

@@ -9,6 +9,8 @@
 #include "xht11.h"
 #include "Arduino.h"
 
+static bool readTimedOut = false;
+
 xht11::xht11(int pin)
 {
   XHT11_pin = pin;
@@ -31,31 +33,51 @@ unsigned char xht11::rec_byte() {
   unsigned char i, dat = 0;
   pinMode(XHT11_pin, INPUT);
   for (i = 0; i < 8; i++) { //从高到低依次接收8位数据
-    while (!digitalRead(XHT11_pin));   //等待50us低电平过去
+    unsigned long waitStarted = micros();
+    while (!digitalRead(XHT11_pin)) {
+      if (micros() - waitStarted > 2000) {
+        readTimedOut = true;
+        return 0;
+      }
+    }
     delayMicroseconds(40);     //延时40us，如果还为高则数据为1，否则为0
     dat <<= 1;         //移位使正确接收8位数据，数据为0时直接移位
     if (digitalRead(XHT11_pin) == 1) //数据为1时，使dat加1来接收数据1
       dat |= 1;
-    while (digitalRead(XHT11_pin)); //等待数据线拉低
+    waitStarted = micros();
+    while (digitalRead(XHT11_pin)) {
+      if (micros() - waitStarted > 2000) {
+        readTimedOut = true;
+        return 0;
+      }
+    }
   }
   return dat;
 }
 
 //接收40位的数据
 bool xht11::receive(unsigned char *xht) {
-  bool flag;
+  bool flag = false;
   unsigned char RH, RL, TH, TL, revise;
+  readTimedOut = false;
   start();
   pinMode(XHT11_pin, INPUT);
   delayMicroseconds(10);
   if (digitalRead(XHT11_pin) == 0) {
-    while (digitalRead(XHT11_pin) == 0); //等待拉高
+    unsigned long waitStarted = micros();
+    while (digitalRead(XHT11_pin) == 0) {
+      if (micros() - waitStarted > 2000) {
+        readTimedOut = true;
+        return false;
+      }
+    }
     delayMicroseconds(90);  //拉高后延时80us(实测这里用90us)
     RH = rec_byte();  //接收湿度高八位
     RL = rec_byte();  //接收湿度低八位
     TH = rec_byte();  //接收温度高八位
     TL = rec_byte();  //接收温度低八位
     revise = rec_byte(); //接收校正位
+    if (readTimedOut) return false;
     //delayMicroseconds(50);    //结束
     if ((RH + RL + TH + TL) == revise) //校正
     {
@@ -80,4 +102,3 @@ bool xht11::receive(unsigned char *xht) {
   }
   return flag;  //读取正确温湿度值返回True,否则返回False
 }
-
