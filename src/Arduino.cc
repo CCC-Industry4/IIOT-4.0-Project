@@ -375,7 +375,7 @@ void setup() {
   pinMode(pushbutton2Pin, INPUT_PULLUP);
 #endif
 #ifdef touchPin
-  pinMode(touchPin, INPUT);
+  //pinMode(touchPin, INPUT);
 #endif
 #ifdef fanPin1
   ledcSetup(10, 20000, 8); 
@@ -1690,11 +1690,16 @@ void touch() {
   lastTouchPoll = millis();
 
   int touchNewRaw = touchRead(touchPin);
+  //Serial.print("Touch Raw: "); // Debugging
+  //Serial.println(touchNewRaw); // Debugging
   
   float fuzzy_touched = 0.0;
-  if (touchNewRaw <= 20) fuzzy_touched = 1.0;
-  else if (touchNewRaw >= 60) fuzzy_touched = 0.0;
-  else fuzzy_touched = (60.0 - touchNewRaw) / 40.0;
+  // If it drops to 10 or below, it is 100% touched
+  if (touchNewRaw <= 10) fuzzy_touched = 1.0;
+  // If it recovers to 24 or above, it is 0% touched
+  else if (touchNewRaw >= 24) fuzzy_touched = 0.0;
+  // If it's bouncing in between, calculate the percentage
+  else fuzzy_touched = (24.0 - touchNewRaw) / 14.0; 
   
   static float touchConfidence = 0.0;
   touchConfidence = (touchConfidence * 0.6) + (fuzzy_touched * 0.4); 
