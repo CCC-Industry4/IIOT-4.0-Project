@@ -337,7 +337,14 @@ void setup() {
   mylcd.backlight();
 
 #ifdef RFID
-  mfrc522.PCD_Init();
+  #ifdef RFID
+  Wire.beginTransmission(0x28);
+  if (Wire.endTransmission() == 0) {
+    mfrc522.PCD_Init();
+  } else {
+    Serial.println("RFID module not found. Skipping initialization.");
+  }
+#endif
 #endif
 
 #ifdef dht11PIN
