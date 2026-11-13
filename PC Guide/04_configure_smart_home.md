@@ -19,6 +19,6 @@
       -  You can add rules or key fobs now if you wish to do so.
 	  - **Click Finalize and Reset ESP32.** When you are ready.
 
-5. **Verify** that your Smart Home is working, while connected to this [link](http://localhost:8088) click on home and under the perspective category click launch, click I4Project_Demo. Here you can play around with different smart home functions and make sure they are working properly. You can also grab the link at the top of your screen and replace "localhost" with your IPv4 address and use that link on another device that is connected to the **same** Wi-Fi as your main PC. ![Ignition Perspective](./images/perspective.png)
+5. **Verify** that your Smart Home is working; while on ignition click on home and under the perspective category click launch then click I4Project_Demo. Here you can play around with different smart home functions and make sure they are working properly.![Ignition Perspective](./images/perspective.png)
 
-6. You can not have two smart homes with the same namespace.  If your home doesn’t connect, look at the namespace of a working Smart Home. 
+6. You can view "Demo" page on other devices other than your PC but make sure **all** devices inlcuding the smart home are connected to the same Wi-Fi. ![Demo](./images/demo_perspective.png)
