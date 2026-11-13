@@ -2,7 +2,7 @@
 # Prepping the firewall
 ---
 ## Windows firewall
-- Press the Windows key and type wf.msc, open up the program titled "Windows defender firewall with advanced security". Once you open it up you should see something like this.
+- Press the Windows key and type “wf.msc”, open up the program titled “Windows defender firewall with advanced security”. Once you open it up you should see something like this.
 ![Startup](./images/wfStart.png)
 
 ## Inbound Rule
