@@ -21,4 +21,4 @@
 
 5. **Verify** that your Smart Home is working; while on ignition click on home and under the perspective category click launch then click I4Project_Demo. Here you can play around with different smart home functions and make sure they are working properly.![Ignition Perspective](./images/perspective.png)
 
-6. You can view "Demo" page on other devices other than your PC but make sure **all** devices inlcuding the smart home are connected to the same Wi-Fi. ![Demo](./images/demo_perspective.png)
+6. You can view the "Demo" page on devices other than your PC but make sure **all** devices including the smart home are connected to the same Wi-Fi. ![Demo](./images/demo_perspective.png)
