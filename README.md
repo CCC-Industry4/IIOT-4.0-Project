@@ -47,6 +47,12 @@ To install the project, run the following command in Raspberry Pi terminal with 
 ```
    curl -o- https://raw.githubusercontent.com/CCC-Industry4/IIOT-4.0-Project/main/install.sh | bash -x
 ```
+### If you want to use a PC instead of a PI
+- [Firewall Preparation](https://github.com/CCC-Industry4/IIOT-4.0-Project/blob/1056dc5d1d4f832861589b156e4337a95b6ce154/PC%20Guide/01_setting_up_firewall.md)
+- [Building Smart Home](https://github.com/CCC-Industry4/IIOT-4.0-Project/blob/1056dc5d1d4f832861589b156e4337a95b6ce154/PC%20Guide/02_building_smart_home.md)
+- [Ignition Set up](https://github.com/CCC-Industry4/IIOT-4.0-Project/blob/1056dc5d1d4f832861589b156e4337a95b6ce154/PC%20Guide/03_setting_up_ignition.md)
+- [Smart Home Configuration](https://github.com/CCC-Industry4/IIOT-4.0-Project/blob/1056dc5d1d4f832861589b156e4337a95b6ce154/PC%20Guide/04_configure_smart_home.md)
+- [Troubleshooting](https://github.com/CCC-Industry4/IIOT-4.0-Project/blob/1056dc5d1d4f832861589b156e4337a95b6ce154/PC%20Guide/05_troubleshooting.md)
 
 ### If you are starting with unconfigured components…
 - [Initialize Router](https://github.com/CCC-Industry4/StarterGuide/blob/main/01_initializing_router.md)  
