@@ -49,22 +49,21 @@ To install the project, run the following command in Raspberry Pi terminal with 
 ```
 ### If you want to use a PC instead of a PI
 - [Firewall Preparation](https://github.com/CCC-Industry4/IIOT-4.0-Project/blob/1056dc5d1d4f832861589b156e4337a95b6ce154/PC%20Guide/01_setting_up_firewall.md)
-- [Building Smart Home](https://github.com/CCC-Industry4/IIOT-4.0-Project/blob/1056dc5d1d4f832861589b156e4337a95b6ce154/PC%20Guide/02_building_smart_home.md)
+
 - [Ignition Set up](https://github.com/CCC-Industry4/IIOT-4.0-Project/blob/1056dc5d1d4f832861589b156e4337a95b6ce154/PC%20Guide/03_setting_up_ignition.md)
 - [Smart Home Configuration](https://github.com/CCC-Industry4/IIOT-4.0-Project/blob/1056dc5d1d4f832861589b156e4337a95b6ce154/PC%20Guide/04_configure_smart_home.md)
-- [Troubleshooting](https://github.com/CCC-Industry4/IIOT-4.0-Project/blob/1056dc5d1d4f832861589b156e4337a95b6ce154/PC%20Guide/05_troubleshooting.md)
 
-### If you are starting with unconfigured components…
-- [Initialize Router](https://github.com/CCC-Industry4/StarterGuide/blob/main/01_initializing_router.md)  
-- [Building Smart home](https://github.com/CCC-Industry4/StarterGuide/blob/main/02_building_smart_home.md)
+### Starting on a PI from scratch
+- [Initialize Router](https://github.com/CCC-Industry4/StarterGuide/blob/main/01_initializing_router.md)
 - [Initialize Raspberry Pi](https://github.com/CCC-Industry4/StarterGuide/blob/main/03_initialize_raspberry_pi.md)
-### Industry 4.0 Project System Laboratory Exercises 
+### Industry 4.0 Project System Laboratory Exercises
+- [Lab 0. Building Smart Home](https://github.com/CCC-Industry4/IIOT-4.0-Project/blob/1056dc5d1d4f832861589b156e4337a95b6ce154/PC%20Guide/02_building_smart_home.md) 
 - [Lab 1. Set-up Raspberry Pi, Arduino Smart Home, and PC](https://github.com/CCC-Industry4/StarterGuide/blob/main/04_setup_raspberry_pi.md)
 - [Lab 2a. Configure camera object detection](https://github.com/CCC-Industry4/StarterGuide/blob/main/05_configure_camera.md)
 - [Lab 2b. Configure Smart Home](https://github.com/CCC-Industry4/StarterGuide/blob/main/06_configure_smart_home.md)
 - [Lab 3. Operation Smart Home Neighborhood](https://github.com/CCC-Industry4/StarterGuide/blob/main/07_operation_smart_home_neighborhood.md)
 - [Lab 4. Troubleshooting](https://github.com/CCC-Industry4/StarterGuide/blob/main/08_troubleshooting.md)
-- [8 Labs on creating a Printed Circuit Board](https://docs.google.com/document/d/13rz4dXHV7b0cbep-HrDET545i4Urjr8j9SfGMteeJzM/edit?usp=sharing) The PCB can be used to create custom boards for the ESP32.
+- [8 Labs on creating a Printed Circuit Board](https://docs.google.com/document/d/13rz4dXHV7b0cbep-HrDET545i4Urjr8j9SfGMteeJzM/edit?usp=sharing) (The PCB can be used to create custom boards for the ESP32)
 
 ### Training Materials
  - [Industry 4.0 PowerPoint](https://docs.google.com/presentation/d/1RTdsWulPext4mxPflkVPRlp7vQk2u_fBCdiXWWHHBMw/edit?usp=sharing)

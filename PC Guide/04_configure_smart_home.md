@@ -4,7 +4,7 @@
 ---
 1. Open up an instance of PowerShell on your Windows machine and type in the command: ipconfig. Locate your IPv4 address and save it for later. In the example image provided below the IPv4 address is 192.168.10.23. ![Ipconfig](./images/ipconfig.png)
 2. Plug in and power up a Smart Home (make sure it has access to sufficient power, problems can occur when the house doesn't have enough power).
-3. Set the home into config mode, if you are unsure how to do this you can reference the PowerPoint guide or continue with this written one.
+3. Set the home into config mode, if you are unsure how to do this you can reference this [PowerPoint guide]() (it is made for use with a PI, but the configuration of the smart home remains the same) or continue with this written one.
      1. Look inside the smart home and locate the reset button.
      2. press the reset button and pay attention to the on-screen instructions.
      3. it should say press both buttons to enter config mode, if you missed the prompt you can go back to step 2 or follow the new on-screen instructions.

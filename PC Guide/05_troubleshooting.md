@@ -9,8 +9,8 @@ Ethernet - Verify settings using Windows PC using ethernet cable
    
 
 <p align="center">
-  <img src="https://github.com/CCC-Industry4/IgnitionProject/blob/Cane/images/troubleshooting/TroubleshootingEthernet1.png" width="45%" />
-  <img src="https://github.com/CCC-Industry4/IgnitionProject/blob/Cane/images/troubleshooting/TroubleshootingEthernet2.png" width="45%" />
+  <img src="https://github.com/CCC-Industry4/IgnitionProject/raw/Cane/images/troubleshooting/TroubleshootingEthernet1.png" width="45%" />
+  <img src="https://github.com/CCC-Industry4/IgnitionProject/raw/Cane/images/troubleshooting/TroubleshootingEthernet2.png" width="45%" />
 </p>
 
 

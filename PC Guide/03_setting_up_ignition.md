@@ -27,14 +27,14 @@
 ## Module Configuration
 To install the MQTT modules for Ignition, follow this guide (see this video for more information: [Video Link](https://youtu.be/AB4knX_4n5c))
 
-1. Use this [link](https://inductiveautomation.com/downloads/third-party-modules/8.3.4) and download the ones that start with MQTT(Distributor, Engine, Transmission, Recorder). ![MQTT Mdls](./images/mdls.png)
+1. Use this [link](https://inductiveautomation.com/downloads/third-party-modules/8.3.10) and download the ones that start with MQTT(Distributor, Engine, Transmission, Recorder). ![MQTT Mdls](./images/mdls.png)
 2.  Type http://localhost:8088 into a web browser or click this [link](http://localhost:8088). ![Home](./images/gatewayHome.png)
 3.  Log in with the default ignition credentials unless they have been changed (username = admin, password = password, if you have not reset your password after restoring your gateway from the .gwbk file then these are the default credentials still).
 4. On the left-hand side of your screen click the tab that says "Platform", click system, and finally click modules.
 5. In the upper right-hand corner click the blue button that says "Install or upgrade module".
 6. Click choose file and install all the .modl files that start with MQTT that you just downloaded. After installing the modules you should see a yellow box. Click the error triangle symbol on the right most side. This will change the box and display a “Restart Gateway” button. Press it. If you have any issues you can use these commands instead while in an active administrator PowerShell session.
    1.  cd "C:\Program Files\ Inductive Automation\Ignition"
-     2.   .\gwcmd -r
+     1.   .\gwcmd -r
 ![Module Restart](./images/mdlRestart.png)
 # Ignition Licenses for Education
 Ignition allows individuals to use full ignition on a two-hour resettable trial basis indefinitely for non-commercial use.  Alternatively Ignition Maker Edition, a streamed down version, may be used for personal use without the need for resetting, but must be connected to the internet.  Inductive Automation partners with qualifying educational institutions to provide free Ignition licenses to students anywhere in the world! Apply here: [https://inductiveautomation.com/educational-engagement](https://inductiveautomation.com/educational-engagement)

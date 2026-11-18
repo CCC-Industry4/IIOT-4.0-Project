@@ -5,13 +5,13 @@
 ---
 
 1. **Instructions for building the Smart Home:**
-   - See the [Building Guide (__Highly Recommended__)](https://github.com/CCC-Industry4/StarterGuide/blob/Alt-Guide/Building.md)
-   - See the official [Keyestudio Smart Home Guide (Deprecated)](https://docs.keyestudio.com/projects/KS5009/en/latest/docs/index.html).
+   - See the [Building Guide](https://github.com/CCC-Industry4/StarterGuide/blob/8cd98f201a4158275c46c4c5b58a1fdbb2670bd0/Building.md) (__Highly Recommended__)
+   - See the official [Keyestudio Smart Home Guide](https://docs.keyestudio.com/projects/KS5009/en/latest/docs/index.html) (__Deprecated__)
         1. *Keep in mind that the Keyestudio Guide incorrectly wired the Steam Sensor to IO34, it should be wired to IO33.*
     
 2. **Pin Connections:**
 
-    - See the [Wiring Guide](https://github.com/CCC-Industry4/StarterGuide/blob/Alt-Guide/Wiring.md)
+    - See the [Wiring Guide](https://github.com/CCC-Industry4/StarterGuide/blob/8cd98f201a4158275c46c4c5b58a1fdbb2670bd0/Wiring.md)
 
    Connect the following components to the corresponding pins on your ESP32 board:
 
