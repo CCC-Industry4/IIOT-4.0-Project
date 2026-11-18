@@ -57,7 +57,7 @@ To install the project, run the following command in Raspberry Pi terminal with 
 - [Initialize Router](https://github.com/CCC-Industry4/StarterGuide/blob/main/01_initializing_router.md)
 - [Initialize Raspberry Pi](https://github.com/CCC-Industry4/StarterGuide/blob/main/03_initialize_raspberry_pi.md)
 ### Industry 4.0 Project System Laboratory Exercises
-- [Lab 0. Building Smart Home](https://github.com/CCC-Industry4/IIOT-4.0-Project/blob/1056dc5d1d4f832861589b156e4337a95b6ce154/PC%20Guide/02_building_smart_home.md) 
+- [Lab 0. Building Smart Home](https://github.com/CCC-Industry4/IIOT-4.0-Project/blob/9282e458c6b8a55597a058f4e479ae9b90c2bde4/PC%20Guide/02_building_smart_home.md) 
 - [Lab 1. Set-up Raspberry Pi, Arduino Smart Home, and PC](https://github.com/CCC-Industry4/StarterGuide/blob/main/04_setup_raspberry_pi.md)
 - [Lab 2a. Configure camera object detection](https://github.com/CCC-Industry4/StarterGuide/blob/main/05_configure_camera.md)
 - [Lab 2b. Configure Smart Home](https://github.com/CCC-Industry4/StarterGuide/blob/main/06_configure_smart_home.md)
