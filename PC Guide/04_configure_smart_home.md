@@ -15,10 +15,11 @@
       -  Neighborhood number(s) -**should** be the same for the whole class.
       -  Home numbers **must** be unique for each home in the same neighborhood.
       -  MQTT IP will be the IPv4 number that you should have from earlier
-      -  Wi-Fi SSID and Password will be any Wi-Fi you can connect to, but you **must** be connected to the same Wi-Fi as your pc. You also must be connected to this same Wi-Fi if you want to interact with ignition on a different device othet than your PC. 
+      -  Wi-Fi SSID and Password will be any Wi-Fi you can connect to, but you **must** be connected to the same Wi-Fi as your pc. You also must be connected to this same Wi-Fi if you want to interact with ignition on a different device other than your PC.
+         - For example, on the configuration menu: Wi-Fi SSID: IT4ProjectCloud, Wi-Fi Pass: IOT12345; On the computer: connect to IT4ProjectCloud.      
       -  You can add rules or key fobs now if you wish to do so.
-	  - **Click Finalize and Reset ESP32.** When you are ready.
+	  - **Click Finalize and Reset ESP32** When you are ready.
 
-5. **Verify** that your Smart Home is working; while on ignition click on home and under the perspective category click launch then click I4Project_Demo. Here you can play around with different smart home functions and make sure they are working properly.![Ignition Perspective](./images/perspective.png)
+5. **Verify** that your Smart Home is working; while on ignition, click Home, click Launch under the Perspective category, then click I4Project_Demo. Here you can play around with different smart home functions and make sure they are working properly.![Ignition Perspective](./images/perspective.png)
 
 6. You can view the "Demo" page on devices other than your PC but make sure **all** devices including the smart home are connected to the same Wi-Fi. ![Demo](./images/demo_perspective.png)

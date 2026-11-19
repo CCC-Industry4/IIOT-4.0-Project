@@ -14,7 +14,8 @@
    - Here is an example:![Ignition Download](./images/ignitionDownload.png)
 3. Now that ignition has been downloaded go to this [link](http://localhost:8088) and sign in with the default username and password (username = admin, password = password), after signing in download the .gwbk file [here](https://github.com/CCC-Industry4/IIOT-4.0-Project/tree/22c610ca6eb637980d1a4cea901977109b490b88/PC%20Guide/ignition).
    - On the left hand-side click platform under the system category, then click Backup & Restore. ![Restore](./images/gatewayRestore.png)
-   - Once the gateway has been restored it is important to note that the password and username have now been defaulted to their original values.
+   - Click "Choose file...", select the .gwbk file, then click "Restore Gateway" in the top right corner.
+   - Once the gateway has been restored, it is important to note that the password and username have now been defaulted to their original values.
    - If you want to change the password and username, follow these steps.
    - First open up PowerShell in administrator mode and type or paste the following commands.
      1.  cd "C:\Program Files\Inductive Automation\Ignition"

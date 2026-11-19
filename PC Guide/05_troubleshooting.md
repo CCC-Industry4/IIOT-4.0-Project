@@ -5,7 +5,8 @@ Ethernet - Verify settings using Windows PC using ethernet cable
 1. Search “Ethernet settings” using Windows search bar.
 2. Double-click on Change adapter options.
    ![Ethernet Settings](https://github.com/user-attachments/assets/405834df-6ddc-40ef-93c7-ccc00f8f6d7a)
-   If you do not see this option, instead search "View network connections" in the Windows search bar. Then continue following the rest of the steps.
+
+      - *If you do not see this option, instead search "View network connections" in the Windows search bar. Then continue following the rest of the steps.*
    
 
 <p align="center">
